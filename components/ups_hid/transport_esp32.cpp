@@ -487,40 +487,47 @@ esp_err_t Esp32UsbTransport::teardown_usb_host() {
 esp_err_t Esp32UsbTransport::find_and_open_device() {
     // Register USB client in asynchronous mode for event-driven device detection
     usb_host_client_config_t client_config = {
-        .is_synchronous = false,  // Use asynchronous mode for USB_HOST_CLIENT_EVENT_NEW_DEV events
+        .is_synchronous = false,
         .max_num_event_msg = 5,
         .async = {
             .client_event_callback = usb_client_event_callback,
             .callback_arg = this
         }
     };
-    
+
+    // When another component owns USB Host, give it time to finish enumeration
+    if (!usb_host_owned_) {
+        ESP_LOGI(ESP32_USB_TAG, "Waiting for USB Host component to finish device enumeration...");
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
     esp_err_t ret = usb_host_client_register(&client_config, &device_.client_hdl);
     if (ret != ESP_OK) {
         set_last_error("Client register failed: " + std::string(esp_err_to_name(ret)));
+        ESP_LOGE(ESP32_USB_TAG, "USB client register failed: %s", esp_err_to_name(ret));
         return ret;
     }
-    
-    ESP_LOGI(ESP32_USB_TAG, "USB client registered (handle=0x%p), waiting for device connection events...", 
+
+    ESP_LOGI(ESP32_USB_TAG, "USB client registered (handle=0x%p), waiting for device connection events...",
              device_.client_hdl);
-    
-    // Force immediate device enumeration check in addition to event-driven detection
-    ESP_LOGI(ESP32_USB_TAG, "Performing immediate device enumeration check...");
-    vTaskDelay(pdMS_TO_TICKS(100)); // Small delay for USB stack to stabilize
-    
+
+    // Check for already-enumerated devices
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     int num_dev = 10;
     uint8_t dev_addr_list[10];
     esp_err_t enum_ret = usb_host_device_addr_list_fill(num_dev, dev_addr_list, &num_dev);
     if (enum_ret == ESP_OK && num_dev > 0) {
-        ESP_LOGI(ESP32_USB_TAG, "Found %d existing USB devices during initial enumeration:", num_dev);
+        ESP_LOGI(ESP32_USB_TAG, "Found %d existing USB devices during enumeration:", num_dev);
         for (int i = 0; i < num_dev; i++) {
-            ESP_LOGI(ESP32_USB_TAG, "  Attempting to handle existing device at address %d", dev_addr_list[i]);
+            ESP_LOGI(ESP32_USB_TAG, "  Attempting to handle device at address %d", dev_addr_list[i]);
             handle_new_device(dev_addr_list[i]);
         }
     } else {
-        ESP_LOGI(ESP32_USB_TAG, "No existing USB devices found - waiting for connection events");
+        ESP_LOGI(ESP32_USB_TAG, "No USB devices found yet (enum_ret=%s, num_dev=%d) - waiting for connection events",
+                 esp_err_to_name(enum_ret), num_dev);
     }
-    
+
     return ESP_OK;
 }
 
@@ -800,33 +807,35 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
 
     esp_err_t ret = usb_host_install(&host_config);
     if (ret == ESP_ERR_INVALID_STATE) {
-        // USB Host already installed (e.g. by ESPHome's usb_host component) - that's fine
-        ESP_LOGI(ESP32_USB_TAG, "USB Host library already installed - reusing existing instance");
+        // USB Host already installed (e.g. by ESPHome's usb_host component)
+        // Don't run our own event loop - ESPHome's loop() handles library events
+        ESP_LOGI(ESP32_USB_TAG, "USB Host library already installed by another component - skipping event loop");
         transport->usb_host_owned_ = false;
-    } else if (ret != ESP_OK) {
-        ESP_LOGE(ESP32_USB_TAG, "USB Host install failed: %s", esp_err_to_name(ret));
-        transport->usb_tasks_running_ = false; // Stop other tasks
         vTaskDelete(nullptr);
         return;
-    } else {
-        ESP_LOGI(ESP32_USB_TAG, "USB Host library installed successfully");
-        transport->usb_host_owned_ = true;
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(ESP32_USB_TAG, "USB Host install failed: %s", esp_err_to_name(ret));
+        transport->usb_tasks_running_ = false;
+        vTaskDelete(nullptr);
+        return;
     }
-    
-    // Main USB Host event loop - following working prototype pattern
+
+    ESP_LOGI(ESP32_USB_TAG, "USB Host library installed successfully");
+    transport->usb_host_owned_ = true;
+
+    // Main USB Host event loop - only runs when we own the USB Host library
     bool has_clients = true;
     bool has_devices = false;
-    
+
     while (has_clients && transport->usb_tasks_running_.load()) {
         uint32_t event_flags;
         ret = usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
-        
+
         if (ret != ESP_OK) {
             ESP_LOGE(ESP32_USB_TAG, "USB Host event handling failed: %s", esp_err_to_name(ret));
             continue;
         }
 
-        // Handle USB Host events (following ESP-IDF v5.4 patterns)
         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
             ESP_LOGI(ESP32_USB_TAG, "No more USB clients");
             if (usb_host_device_free_all() == ESP_OK) {
@@ -837,21 +846,16 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
                 has_devices = true;
             }
         }
-        
+
         if (has_devices && (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE)) {
             ESP_LOGI(ESP32_USB_TAG, "All devices freed");
             has_clients = false;
         }
     }
-    
-    // Cleanup USB Host library (only if we installed it)
-    if (transport->usb_host_owned_) {
-        ESP_LOGI(ESP32_USB_TAG, "Uninstalling USB Host library");
-        usb_host_uninstall();
-    } else {
-        ESP_LOGI(ESP32_USB_TAG, "USB Host library owned by another component - skipping uninstall");
-    }
-    
+
+    ESP_LOGI(ESP32_USB_TAG, "Uninstalling USB Host library");
+    usb_host_uninstall();
+
     ESP_LOGI(ESP32_USB_TAG, "USB Host Library task ending");
     vTaskDelete(nullptr);
 }
