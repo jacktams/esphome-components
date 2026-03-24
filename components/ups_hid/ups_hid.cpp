@@ -37,6 +37,8 @@ void UpsHidComponent::update() {
     return;
   }
   if (!transport_->is_connected()) {
+    // Poll for devices from main loop context (ensures logs are visible over API)
+    transport_->poll_for_devices();
     ESP_LOGD(TAG, "USB transport not connected - waiting for device (initialized=%s, tasks=%s, client=%s, last_error='%s')",
              transport_->is_initialized() ? "yes" : "no",
              transport_->are_tasks_running() ? "yes" : "no",

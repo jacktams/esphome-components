@@ -50,6 +50,7 @@ public:
     bool is_initialized() const override { return initialized_.load(); }
     bool are_tasks_running() const override { return usb_tasks_running_.load(); }
     bool has_client_handle() const override { return device_.client_hdl != nullptr; }
+    void poll_for_devices() override;
 
 private:
     // USB device structure

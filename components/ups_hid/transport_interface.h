@@ -49,6 +49,7 @@ public:
     virtual bool is_initialized() const { return false; }
     virtual bool are_tasks_running() const { return false; }
     virtual bool has_client_handle() const { return false; }
+    virtual void poll_for_devices() {}
 };
 
 // Forward declaration - implementation in usb_transport_factory.h

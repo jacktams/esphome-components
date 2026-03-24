@@ -531,6 +531,40 @@ esp_err_t Esp32UsbTransport::find_and_open_device() {
     return ESP_OK;
 }
 
+void Esp32UsbTransport::poll_for_devices() {
+    if (!initialized_.load() || !device_.client_hdl) {
+        return;
+    }
+
+    // Process any pending client events from main loop context
+    if (device_.client_hdl) {
+        esp_err_t ret = usb_host_client_handle_events(device_.client_hdl, 0);
+        if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT) {
+            ESP_LOGW(ESP32_USB_TAG, "Client handle_events error: %s", esp_err_to_name(ret));
+        }
+    }
+
+    // Enumerate devices on the bus
+    int num_dev = 10;
+    uint8_t dev_addr_list[10];
+    esp_err_t ret = usb_host_device_addr_list_fill(num_dev, dev_addr_list, &num_dev);
+    if (ret == ESP_OK) {
+        if (num_dev > 0) {
+            ESP_LOGI(ESP32_USB_TAG, "Bus scan: %d device(s) found", num_dev);
+            for (int i = 0; i < num_dev; i++) {
+                ESP_LOGI(ESP32_USB_TAG, "  Device at address %d", dev_addr_list[i]);
+                if (!connected_.load()) {
+                    handle_new_device(dev_addr_list[i]);
+                }
+            }
+        } else {
+            ESP_LOGD(ESP32_USB_TAG, "Bus scan: no devices on bus");
+        }
+    } else {
+        ESP_LOGW(ESP32_USB_TAG, "Bus scan failed: %s", esp_err_to_name(ret));
+    }
+}
+
 esp_err_t Esp32UsbTransport::claim_interface() {
     const usb_config_desc_t *config_desc;
     esp_err_t ret = usb_host_get_active_config_descriptor(device_.dev_hdl, &config_desc);
