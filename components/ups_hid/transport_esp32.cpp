@@ -799,14 +799,19 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
     };
 
     esp_err_t ret = usb_host_install(&host_config);
-    if (ret != ESP_OK) {
+    if (ret == ESP_ERR_INVALID_STATE) {
+        // USB Host already installed (e.g. by ESPHome's usb_host component) - that's fine
+        ESP_LOGI(ESP32_USB_TAG, "USB Host library already installed - reusing existing instance");
+        transport->usb_host_owned_ = false;
+    } else if (ret != ESP_OK) {
         ESP_LOGE(ESP32_USB_TAG, "USB Host install failed: %s", esp_err_to_name(ret));
         transport->usb_tasks_running_ = false; // Stop other tasks
         vTaskDelete(nullptr);
         return;
+    } else {
+        ESP_LOGI(ESP32_USB_TAG, "USB Host library installed successfully");
+        transport->usb_host_owned_ = true;
     }
-
-    ESP_LOGI(ESP32_USB_TAG, "USB Host library installed successfully");
     
     // Main USB Host event loop - following working prototype pattern
     bool has_clients = true;
@@ -839,9 +844,13 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
         }
     }
     
-    // Cleanup USB Host library
-    ESP_LOGI(ESP32_USB_TAG, "Uninstalling USB Host library");
-    usb_host_uninstall();
+    // Cleanup USB Host library (only if we installed it)
+    if (transport->usb_host_owned_) {
+        ESP_LOGI(ESP32_USB_TAG, "Uninstalling USB Host library");
+        usb_host_uninstall();
+    } else {
+        ESP_LOGI(ESP32_USB_TAG, "USB Host library owned by another component - skipping uninstall");
+    }
     
     ESP_LOGI(ESP32_USB_TAG, "USB Host Library task ending");
     vTaskDelete(nullptr);

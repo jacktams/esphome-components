@@ -32,9 +32,16 @@ void UpsHidComponent::setup() {
 }
 
 void UpsHidComponent::update() {
-  if (!transport_ || !transport_->is_connected()) {
-    // Device not connected yet - normal during startup or after disconnection
-    ESP_LOGD(TAG, log_messages::WAITING_FOR_DEVICE);
+  if (!transport_) {
+    ESP_LOGD(TAG, "No transport instance available");
+    return;
+  }
+  if (!transport_->is_connected()) {
+    ESP_LOGD(TAG, "USB transport not connected - waiting for device (initialized=%s, tasks=%s, client=%s, last_error='%s')",
+             transport_->is_initialized() ? "yes" : "no",
+             transport_->are_tasks_running() ? "yes" : "no",
+             transport_->has_client_handle() ? "yes" : "no",
+             transport_->get_last_error().c_str());
     return;
   }
   

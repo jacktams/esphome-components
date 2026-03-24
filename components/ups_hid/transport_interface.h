@@ -44,6 +44,11 @@ public:
     
     // Error information
     virtual std::string get_last_error() const = 0;
+
+    // Diagnostics
+    virtual bool is_initialized() const { return false; }
+    virtual bool are_tasks_running() const { return false; }
+    virtual bool has_client_handle() const { return false; }
 };
 
 // Forward declaration - implementation in usb_transport_factory.h
