@@ -799,16 +799,22 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
     };
 
     esp_err_t ret = usb_host_install(&host_config);
-    if (ret != ESP_OK) {
+    if (ret == ESP_ERR_INVALID_STATE) {
+        // USB Host already installed (e.g. by ESPHome's usb_host component)
+        // Don't run our own event loop - the other component handles library events
+        ESP_LOGI(ESP32_USB_TAG, "USB Host library already installed by another component - skipping event loop");
+        vTaskDelete(nullptr);
+        return;
+    } else if (ret != ESP_OK) {
         ESP_LOGE(ESP32_USB_TAG, "USB Host install failed: %s", esp_err_to_name(ret));
-        transport->usb_tasks_running_ = false; // Stop other tasks
+        transport->usb_tasks_running_ = false;
         vTaskDelete(nullptr);
         return;
     }
 
     ESP_LOGI(ESP32_USB_TAG, "USB Host library installed successfully");
-    
-    // Main USB Host event loop - following working prototype pattern
+
+    // Main USB Host event loop
     bool has_clients = true;
     bool has_devices = false;
     
