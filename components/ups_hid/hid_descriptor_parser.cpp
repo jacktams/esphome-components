@@ -94,6 +94,22 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
     // Per-report bit offset tracking: key = (report_type << 8) | report_id
     std::map<uint16_t, uint16_t> bit_offsets;
 
+    // Debug: dump entire raw descriptor in 64-byte chunks
+    ESP_LOGI(PARSER_TAG, "Raw HID descriptor: %zu bytes", len);
+    for (size_t offset = 0; offset < len; offset += 64) {
+        std::string hex;
+        for (size_t i = offset; i < std::min(len, offset + 64); i++) {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%02X ", data[i]);
+            hex += buf;
+        }
+        ESP_LOGI(PARSER_TAG, "  @%04zu: %s", offset, hex.c_str());
+    }
+
+    // Parse counters for diagnostics
+    uint32_t total_items = 0, main_items = 0, input_items = 0, feature_items = 0;
+    uint32_t constant_skipped = 0, zero_usage_skipped = 0, fields_added = 0;
+
     size_t pos = 0;
     while (pos < len) {
         uint8_t prefix = data[pos];
@@ -106,6 +122,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
             continue;
         }
 
+        total_items++;
         // Short item
         uint8_t item_size = prefix & 0x03;
         if (item_size == 3) item_size = 4; // size code 3 means 4 bytes
@@ -198,8 +215,11 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
             case MAIN_INPUT:
             case MAIN_OUTPUT:
             case MAIN_FEATURE: {
+                main_items++;
                 uint8_t rtype = (item_tag == MAIN_INPUT) ? 1 :
                                 (item_tag == MAIN_OUTPUT) ? 2 : 3;
+                if (rtype == 1) input_items++;
+                if (rtype == 3) feature_items++;
                 bool is_constant = (value & 0x01) != 0; // bit 0 = Constant
 
                 uint16_t offset_key = (rtype << 8) | gs.report_id;
@@ -229,8 +249,13 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     field.parent_collection = parent;
                     field.is_constant = is_constant;
 
-                    if (!is_constant && field.usage_id != 0) {
+                    if (is_constant) {
+                        constant_skipped++;
+                    } else if (field.usage_id == 0) {
+                        zero_usage_skipped++;
+                    } else {
                         fields_.push_back(field);
+                        fields_added++;
                     }
 
                     bit_offsets[offset_key] += gs.report_size;
@@ -257,7 +282,10 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
         pos += item_size;
     }
 
-    ESP_LOGI(PARSER_TAG, "Parsed HID descriptor: %zu fields from %zu bytes", fields_.size(), len);
+    ESP_LOGI(PARSER_TAG, "Parsed HID descriptor: %zu fields from %zu bytes "
+             "(items=%u, main=%u, input=%u, feature=%u, const_skip=%u, zero_skip=%u)",
+             fields_.size(), len, total_items, main_items, input_items, feature_items,
+             constant_skipped, zero_usage_skipped);
     return !fields_.empty();
 }
 
