@@ -217,13 +217,23 @@ bool EatonHidProtocol::read_data(UpsData &data) {
     }
 
     // Always log descriptor status so it's visible even when init was missed
-    ESP_LOGD(EATON_TAG, "Parsing %d reports (descriptor: %s)",
-             success, descriptor_available_ ? "YES" : "NO");
+    ESP_LOGD(EATON_TAG, "Parsing %d reports (descriptor: %s, %zu fields)",
+             success, descriptor_available_ ? "YES" : "NO",
+             descriptor_available_ ? descriptor_parser_.get_fields().size() : 0);
 
     if (first_read_) {
         log_all_reports();
         if (descriptor_available_) {
-            log_descriptor_fields();
+            // Log field map at DEBUG so it appears in API logs
+            const auto& fields = descriptor_parser_.get_fields();
+            for (const auto& f : fields) {
+                const char* type_str = (f.report_type == 1) ? "In" :
+                                       (f.report_type == 2) ? "Out" : "Feat";
+                ESP_LOGD(EATON_TAG, "  %s 0x%02X: P=0x%04X U=0x%04X @%u/%u [%d,%d] C=0x%04X",
+                         type_str, f.report_id, f.usage_page, f.usage_id,
+                         f.bit_offset, f.bit_size, f.logical_min, f.logical_max,
+                         f.parent_collection);
+            }
         }
         first_read_ = false;
     }
