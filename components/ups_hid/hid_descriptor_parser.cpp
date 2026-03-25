@@ -95,20 +95,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
     // Per-report bit offset tracking: key = (report_type << 8) | report_id
     std::map<uint16_t, uint16_t> bit_offsets;
 
-    // Debug: dump entire raw descriptor in 64-byte chunks
-    ESP_LOGI(PARSER_TAG, "Raw HID descriptor: %zu bytes", len);
-    for (size_t offset = 0; offset < len; offset += 64) {
-        std::string hex;
-        for (size_t i = offset; i < std::min(len, offset + 64); i++) {
-            char buf[4];
-            snprintf(buf, sizeof(buf), "%02X ", data[i]);
-            hex += buf;
-        }
-        ESP_LOGI(PARSER_TAG, "  @%04zu: %s", offset, hex.c_str());
-    }
 
-    // Save raw descriptor for later dumping via API logs
-    raw_descriptor.assign(data, data + len);
 
     // Reset parse counters
     total_items = main_items = input_items = feature_items = 0;

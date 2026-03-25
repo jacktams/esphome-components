@@ -132,26 +132,26 @@ bool EatonHidProtocol::read_descriptor() {
 
 int32_t EatonHidProtocol::extract_field_value(const std::vector<uint8_t> &data,
                                                 uint16_t bit_offset, uint16_t bit_size) {
-    if (data.empty()) return 0;
+    if (data.empty() || bit_size == 0) return 0;
+
+    // Bounds check: ensure the field fits within the data
+    size_t total_bits_needed = static_cast<size_t>(bit_offset) + bit_size;
+    size_t total_bits_available = data.size() * 8;
+    if (total_bits_needed > total_bits_available) return 0;
 
     // For single-bit boolean fields
     if (bit_size == 1) {
         size_t byte_idx = bit_offset / 8;
         uint8_t bit_idx = bit_offset % 8;
-        if (byte_idx < data.size()) {
-            return (data[byte_idx] >> bit_idx) & 1;
-        }
-        return 0;
+        return (data[byte_idx] >> bit_idx) & 1;
     }
 
     // For byte-aligned multi-byte fields
     size_t byte_offset = bit_offset / 8;
     if (bit_offset % 8 == 0 && bit_size % 8 == 0) {
         size_t num_bytes = bit_size / 8;
-        if (byte_offset + num_bytes > data.size()) return 0;
-
         int32_t value = 0;
-        for (size_t i = 0; i < num_bytes; i++) {
+        for (size_t i = 0; i < num_bytes && i < 4; i++) {
             value |= static_cast<int32_t>(data[byte_offset + i]) << (i * 8);
         }
         return value;
@@ -163,10 +163,8 @@ int32_t EatonHidProtocol::extract_field_value(const std::vector<uint8_t> &data,
         uint16_t abs_bit = bit_offset + i;
         size_t byte_idx = abs_bit / 8;
         uint8_t bit_idx = abs_bit % 8;
-        if (byte_idx < data.size()) {
-            if (data[byte_idx] & (1 << bit_idx)) {
-                value |= (1 << i);
-            }
+        if (data[byte_idx] & (1 << bit_idx)) {
+            value |= (1 << i);
         }
     }
     return value;
@@ -226,38 +224,13 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
-    // Always log descriptor status so it's visible even when init was missed
-    ESP_LOGD(EATON_TAG, "Parsing %d reports (descriptor: %s, %zu fields)",
-             success, descriptor_available_ ? "YES" : "NO",
-             descriptor_available_ ? descriptor_parser_.get_fields().size() : 0);
-
-    // Dump raw descriptor across multiple cycles to avoid log buffer overflow
-    // Each cycle dumps ~256 bytes (8 lines of 32 bytes)
-    if (descriptor_available_ && !descriptor_parser_.raw_descriptor.empty()) {
-        const auto& raw = descriptor_parser_.raw_descriptor;
-        size_t chunk_size = 256;
-        size_t chunk_start = first_read_ * chunk_size;
-        size_t total_chunks = (raw.size() + chunk_size - 1) / chunk_size;
-
-        if (first_read_ < total_chunks) {
-            if (first_read_ == 0) {
-                ESP_LOGD(EATON_TAG, "=== Raw HID descriptor: %zu bytes ===", raw.size());
-            }
-            size_t chunk_end = std::min(raw.size(), chunk_start + chunk_size);
-            for (size_t offset = chunk_start; offset < chunk_end; offset += 32) {
-                std::string hex;
-                for (size_t i = offset; i < std::min(chunk_end, offset + 32); i++) {
-                    char buf[4];
-                    snprintf(buf, sizeof(buf), "%02X ", raw[i]);
-                    hex += buf;
-                }
-                ESP_LOGD(EATON_TAG, "  @%04zu: %s", offset, hex.c_str());
-            }
-            if (first_read_ + 1 == total_chunks) {
-                ESP_LOGD(EATON_TAG, "=== End descriptor ===");
-            }
-            first_read_++;
-        }
+    // Log descriptor status on first visible cycle
+    if (first_read_ == 0) {
+        ESP_LOGI(EATON_TAG, "Descriptor: %s (%zu fields from %zu bytes)",
+                 descriptor_available_ ? "YES" : "NO",
+                 descriptor_available_ ? descriptor_parser_.get_fields().size() : 0,
+                 descriptor_size_);
+        first_read_ = 1;
     }
 
     parse_power_summary(data);
@@ -654,21 +627,6 @@ void EatonHidProtocol::parse_voltages(UpsData &data) {
         if (v > 0 && v <= VOLTAGE_MAX_VALID) {
             data.power.input_transfer_high = v;
             ESP_LOGD(EATON_TAG, "Transfer high (descriptor): %.1f V", v);
-        }
-    }
-
-    // Log raw report bytes for all reports
-    for (uint8_t rid : available_report_ids_) {
-        auto it = report_cache_.find(rid);
-        if (it != report_cache_.end()) {
-            const auto& d = it->second;
-            std::string hex;
-            for (size_t i = 0; i < d.size(); i++) {
-                char buf[4];
-                snprintf(buf, sizeof(buf), "%02X ", d[i]);
-                hex += buf;
-            }
-            ESP_LOGD(EATON_TAG, "Report 0x%02X [%zu]: %s", rid, d.size(), hex.c_str());
         }
     }
 
