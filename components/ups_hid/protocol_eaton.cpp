@@ -6,6 +6,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cmath>
+#include <cstring>
+#include <memory>
 
 namespace esphome {
 namespace ups_hid {
@@ -97,11 +99,18 @@ bool EatonHidProtocol::read_report(uint8_t report_type, uint8_t report_id, size_
 }
 
 bool EatonHidProtocol::read_descriptor() {
-    uint8_t desc_buf[512] = {0};
-    size_t desc_len = sizeof(desc_buf);
+    // Eaton 5P descriptors are ~800-1200 bytes; use heap to avoid stack overflow
+    static constexpr size_t DESC_BUF_SIZE = 4096;
+    auto desc_buf = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[DESC_BUF_SIZE]);
+    if (!desc_buf) {
+        ESP_LOGW(EATON_TAG, "Failed to allocate descriptor buffer");
+        return false;
+    }
+    memset(desc_buf.get(), 0, DESC_BUF_SIZE);
+    size_t desc_len = DESC_BUF_SIZE;
 
-    ESP_LOGD(EATON_TAG, "Attempting to read HID report descriptor...");
-    esp_err_t ret = parent_->get_hid_report_descriptor(desc_buf, &desc_len,
+    ESP_LOGD(EATON_TAG, "Attempting to read HID report descriptor (max %zu bytes)...", desc_len);
+    esp_err_t ret = parent_->get_hid_report_descriptor(desc_buf.get(), &desc_len,
                                                         parent_->get_protocol_timeout());
     if (ret != ESP_OK || desc_len == 0) {
         ESP_LOGW(EATON_TAG, "Failed to read HID report descriptor: %s", esp_err_to_name(ret));
@@ -111,7 +120,7 @@ bool EatonHidProtocol::read_descriptor() {
     descriptor_size_ = desc_len;
     ESP_LOGI(EATON_TAG, "Read HID report descriptor: %zu bytes", desc_len);
 
-    if (!descriptor_parser_.parse(desc_buf, desc_len)) {
+    if (!descriptor_parser_.parse(desc_buf.get(), desc_len)) {
         ESP_LOGW(EATON_TAG, "Failed to parse HID report descriptor");
         return false;
     }
