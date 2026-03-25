@@ -98,6 +98,7 @@ private:
     esp_err_t find_endpoints();
     
     void set_last_error(const std::string& error);
+    bool matches_device_filter(uint16_t vid, uint16_t pid) const;
     esp_err_t submit_control_transfer(uint8_t bmRequestType, uint8_t bRequest,
                                     uint16_t wValue, uint16_t wIndex,
                                     uint8_t* data, size_t data_len,

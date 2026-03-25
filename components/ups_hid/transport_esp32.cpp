@@ -421,6 +421,46 @@ void Esp32UsbTransport::set_last_error(const std::string& error) {
     ESP_LOGW(ESP32_USB_TAG, "%s", error.c_str());
 }
 
+bool Esp32UsbTransport::matches_device_filter(uint16_t vid, uint16_t pid) const {
+    // If explicit VID/PID filter is set, require exact match
+    if (filter_vendor_id_ != 0 && filter_product_id_ != 0) {
+        bool match = (vid == filter_vendor_id_ && pid == filter_product_id_);
+        if (!match) {
+            ESP_LOGD(ESP32_USB_TAG, "Device VID=0x%04X PID=0x%04X doesn't match filter VID=0x%04X PID=0x%04X",
+                     vid, pid, filter_vendor_id_, filter_product_id_);
+        }
+        return match;
+    }
+
+    // Auto-detect mode: check against known UPS vendor IDs
+    static const uint16_t known_ups_vendors[] = {
+        0x0463, // MGE Office Protection Systems / Eaton
+        0x047C, // Dell
+        0x0483, // STMicroelectronics
+        0x04B3, // IBM
+        0x04D8, // OpenUPS
+        0x050D, // Belkin
+        0x051D, // APC
+        0x0592, // Powerware
+        0x05DD, // Delta Electronics
+        0x06DA, // MGE UPS Systems
+        0x075D, // Idowell
+        0x0764, // CyberPower
+        0x09AE, // Tripp Lite
+        0x09D6, // KSTAR
+    };
+
+    for (uint16_t known_vid : known_ups_vendors) {
+        if (vid == known_vid) {
+            ESP_LOGD(ESP32_USB_TAG, "Device VID=0x%04X matches known UPS vendor", vid);
+            return true;
+        }
+    }
+
+    ESP_LOGD(ESP32_USB_TAG, "Device VID=0x%04X is not a known UPS vendor", vid);
+    return false;
+}
+
 esp_err_t Esp32UsbTransport::setup_usb_host() {
     // Create USB library task - USB Host installation happens inside the task
     if (!usb_tasks_running_.load()) {
@@ -776,14 +816,35 @@ void Esp32UsbTransport::handle_new_device(uint8_t dev_addr) {
     if (ret == ESP_OK) {
         device_.vendor_id = device_desc->idVendor;
         device_.product_id = device_desc->idProduct;
-        
-        ESP_LOGI(ESP32_USB_TAG, "USB device opened: VID=0x%04X, PID=0x%04X, Speed=%d", 
-                 device_.vendor_id, device_.product_id, dev_info.speed);
-        
+
+        ESP_LOGI(ESP32_USB_TAG, "USB device opened: VID=0x%04X, PID=0x%04X, Class=0x%02X, Speed=%d",
+                 device_.vendor_id, device_.product_id, device_desc->bDeviceClass, dev_info.speed);
+
+        // Check VID/PID filter - skip devices that don't match
+        if (!matches_device_filter(device_.vendor_id, device_.product_id)) {
+            ESP_LOGW(ESP32_USB_TAG, "Device VID=0x%04X PID=0x%04X does not match filter - skipping",
+                     device_.vendor_id, device_.product_id);
+            usb_host_device_close(device_.client_hdl, device_.dev_hdl);
+            device_.dev_hdl = nullptr;
+            device_.vendor_id = 0;
+            device_.product_id = 0;
+            return;
+        }
+
+        // Reject USB hubs (class 0x09) - they are never UPS devices
+        if (device_desc->bDeviceClass == 0x09) {
+            ESP_LOGW(ESP32_USB_TAG, "Device is a USB hub (class=0x09) - skipping");
+            usb_host_device_close(device_.client_hdl, device_.dev_hdl);
+            device_.dev_hdl = nullptr;
+            device_.vendor_id = 0;
+            device_.product_id = 0;
+            return;
+        }
+
         // Check if this is a UPS device (HID class)
-        if (device_desc->bDeviceClass == USB_CLASS_HID || 
+        if (device_desc->bDeviceClass == USB_CLASS_HID ||
             device_desc->bDeviceClass == 0x00) { // Device class defined at interface level
-            
+
             // Try to claim HID interface and find endpoints
             ret = claim_interface();
             if (ret == ESP_OK) {
@@ -802,6 +863,8 @@ void Esp32UsbTransport::handle_new_device(uint8_t dev_addr) {
     // Clean up on failure
     usb_host_device_close(device_.client_hdl, device_.dev_hdl);
     device_.dev_hdl = nullptr;
+    device_.vendor_id = 0;
+    device_.product_id = 0;
 }
 
 void Esp32UsbTransport::handle_device_gone(usb_device_handle_t dev_hdl) {

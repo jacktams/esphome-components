@@ -174,7 +174,10 @@ bool UpsHidComponent::initialize_transport() {
     ESP_LOGE(TAG, "Failed to create transport instance");
     return false;
   }
-  
+
+  // Pass configured VID/PID filter to transport before initialization
+  transport_->set_device_filter(usb_vendor_id_, usb_product_id_);
+
   esp_err_t ret = transport_->initialize();
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Transport initialization failed: %s", transport_->get_last_error().c_str());

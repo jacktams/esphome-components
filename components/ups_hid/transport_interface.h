@@ -45,11 +45,22 @@ public:
     // Error information
     virtual std::string get_last_error() const = 0;
 
+    // Device filtering - set expected VID/PID to avoid claiming wrong devices
+    // When both are 0, auto-detect mode uses known UPS vendor list
+    virtual void set_device_filter(uint16_t vendor_id, uint16_t product_id) {
+        filter_vendor_id_ = vendor_id;
+        filter_product_id_ = product_id;
+    }
+
     // Diagnostics
     virtual bool is_initialized() const { return false; }
     virtual bool are_tasks_running() const { return false; }
     virtual bool has_client_handle() const { return false; }
     virtual void poll_for_devices() {}
+
+protected:
+    uint16_t filter_vendor_id_{0};
+    uint16_t filter_product_id_{0};
 };
 
 // Forward declaration - implementation in usb_transport_factory.h
