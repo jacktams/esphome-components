@@ -200,6 +200,20 @@ void AutomowerBLE::setup() {
   this->channel_id_ = esp_random();
   ESP_LOGI(TAG, "Channel ID: 0x%08X", this->channel_id_);
 
+  // Clear all existing bonds to avoid stale bond conflicts
+  int dev_num = esp_ble_get_bond_device_num();
+  if (dev_num > 0) {
+    esp_ble_bond_dev_t *dev_list = (esp_ble_bond_dev_t *) malloc(sizeof(esp_ble_bond_dev_t) * dev_num);
+    if (dev_list != nullptr) {
+      esp_ble_get_bond_device_list(&dev_num, dev_list);
+      for (int i = 0; i < dev_num; i++) {
+        esp_ble_remove_bond_device(dev_list[i].bd_addr);
+        ESP_LOGI(TAG, "Removed stored bond %d", i);
+      }
+      free(dev_list);
+    }
+  }
+
   // Configure BLE security for PIN-based MITM pairing
   esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
   esp_ble_io_cap_t io_cap = ESP_IO_CAP_OUT;  // "Display" capability — provides static passkey
