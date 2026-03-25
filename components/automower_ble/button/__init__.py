@@ -10,6 +10,7 @@ CONF_AUTOMOWER_BLE_ID = "automower_ble_id"
 CONF_START = "start"
 CONF_PAUSE = "pause"
 CONF_PARK = "park"
+CONF_CLEAR_BOND = "clear_bond"
 
 AutomowerStartButton = automower_ble_ns.class_(
     "AutomowerStartButton", button.Button, cg.Parented.template(AutomowerBLE)
@@ -20,6 +21,9 @@ AutomowerPauseButton = automower_ble_ns.class_(
 AutomowerParkButton = automower_ble_ns.class_(
     "AutomowerParkButton", button.Button, cg.Parented.template(AutomowerBLE)
 )
+AutomowerClearBondButton = automower_ble_ns.class_(
+    "AutomowerClearBondButton", button.Button, cg.Parented.template(AutomowerBLE)
+)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -27,6 +31,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_START): button.button_schema(AutomowerStartButton),
         cv.Optional(CONF_PAUSE): button.button_schema(AutomowerPauseButton),
         cv.Optional(CONF_PARK): button.button_schema(AutomowerParkButton),
+        cv.Optional(CONF_CLEAR_BOND): button.button_schema(AutomowerClearBondButton),
     }
 )
 
@@ -44,4 +49,8 @@ async def to_code(config):
 
     if CONF_PARK in config:
         btn = await button.new_button(config[CONF_PARK])
+        await cg.register_parented(btn, config[CONF_AUTOMOWER_BLE_ID])
+
+    if CONF_CLEAR_BOND in config:
+        btn = await button.new_button(config[CONF_CLEAR_BOND])
         await cg.register_parented(btn, config[CONF_AUTOMOWER_BLE_ID])

@@ -141,6 +141,11 @@ class AutomowerParkButton : public button::Button, public Parented<AutomowerBLE>
  public:
   void press_action() override;
 };
+
+class AutomowerClearBondButton : public button::Button, public Parented<AutomowerBLE> {
+ public:
+  void press_action() override;
+};
 #endif
 
 class AutomowerBLE : public PollingComponent, public ble_client::BLEClientNode {
