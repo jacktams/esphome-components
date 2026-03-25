@@ -234,7 +234,8 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                 }
 
                 // Fill usages from usage range if individual usages not provided
-                if (usages.empty() && usage_min <= usage_max) {
+                // Only expand if range was explicitly set (usage_max > 0)
+                if (usages.empty() && usage_max > 0 && usage_min <= usage_max) {
                     for (uint16_t u = usage_min; u <= usage_max && usages.size() < gs.report_count; u++) {
                         usages.push_back(u);
                     }
