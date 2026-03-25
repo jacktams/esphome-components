@@ -151,26 +151,29 @@ void AutomowerBLE::write_data_(const std::vector<uint8_t> &data) {
     return;
   }
 
-  // Fragment into 17-byte chunks (MTU 20 - 3 overhead)
-  const size_t chunk_size = 17;
-  for (size_t i = 0; i < data.size(); i += chunk_size) {
-    size_t len = std::min(chunk_size, data.size() - i);
-    auto status = esp_ble_gattc_write_char(
-        this->parent()->get_gattc_if(),
-        this->parent()->get_conn_id(),
-        this->write_handle_,
-        len,
-        const_cast<uint8_t *>(data.data() + i),
-        ESP_GATT_WRITE_TYPE_NO_RSP,
-        ESP_GATT_AUTH_REQ_NONE);
-
-    if (status != ESP_OK) {
-      ESP_LOGE(TAG, "Write failed: %d", status);
-      return;
-    }
+  // Log the full packet for debugging
+  std::string hex;
+  for (size_t i = 0; i < data.size(); i++) {
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%02X ", data[i]);
+    hex += buf;
   }
+  ESP_LOGI(TAG, "Writing %d bytes: %s", data.size(), hex.c_str());
 
-  ESP_LOGV(TAG, "Wrote %d bytes", data.size());
+  // Send full packet in one write — ESP32 MTU is negotiated (typically 65+)
+  // so no need for application-level fragmentation
+  auto status = esp_ble_gattc_write_char(
+      this->parent()->get_gattc_if(),
+      this->parent()->get_conn_id(),
+      this->write_handle_,
+      data.size(),
+      const_cast<uint8_t *>(data.data()),
+      ESP_GATT_WRITE_TYPE_NO_RSP,
+      ESP_GATT_AUTH_REQ_NONE);
+
+  if (status != ESP_OK) {
+    ESP_LOGE(TAG, "Write failed: %d", status);
+  }
 }
 
 void AutomowerBLE::subscribe_notifications_() {
@@ -397,8 +400,14 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         this->state_ = ConnectionState::ERROR;
         return;
       }
-      ESP_LOGI(TAG, "Notifications enabled, sending channel setup immediately");
-      this->state_ = ConnectionState::SETUP_CHANNEL;
+      ESP_LOGI(TAG, "Notifications enabled, waiting 5s before channel setup");
+      this->set_timeout("setup_delay", 5000, [this]() {
+        if (this->state_ == ConnectionState::CONNECTED) {
+          ESP_LOGI(TAG, "Delay complete, starting channel setup");
+          this->state_ = ConnectionState::SETUP_CHANNEL;
+        }
+      });
+      this->state_ = ConnectionState::CONNECTED;  // park here until timeout fires
       break;
     }
 
@@ -478,7 +487,15 @@ void AutomowerBLE::gap_event_handler(esp_gap_ble_cb_event_t event,
 // ---- Notification / response handling ----
 
 void AutomowerBLE::handle_notification_(const uint8_t *data, uint16_t length) {
-  ESP_LOGV(TAG, "Notification: %d bytes", length);
+  // Log at INFO level during debugging
+  std::string hex;
+  for (uint16_t i = 0; i < length && i < 30; i++) {
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%02X ", data[i]);
+    hex += buf;
+  }
+  ESP_LOGI(TAG, "Notification received: %d bytes: %s%s", length,
+           hex.c_str(), length > 30 ? "..." : "");
 
   // Append to response buffer
   this->response_buffer_.insert(this->response_buffer_.end(), data, data + length);

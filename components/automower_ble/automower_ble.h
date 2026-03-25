@@ -219,7 +219,7 @@ class AutomowerBLE : public PollingComponent, public ble_client::BLEClientNode {
   uint32_t last_keepalive_{0};
 
   // Timeout
-  static constexpr uint32_t RESPONSE_TIMEOUT_MS = 10000;
+  static constexpr uint32_t RESPONSE_TIMEOUT_MS = 30000;
   static constexpr uint32_t KEEPALIVE_INTERVAL_MS = 15000;
 
   // Sensors
