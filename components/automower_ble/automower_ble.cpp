@@ -243,31 +243,6 @@ void AutomowerBLE::loop() {
 
   // State machine transitions that need to send data
   switch (this->state_) {
-    case ConnectionState::PAIRING: {
-      ESP_LOGI(TAG, "Initiating BLE pairing/bonding");
-      auto status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
-      if (status != ESP_OK) {
-        ESP_LOGW(TAG, "esp_ble_set_encryption failed: %d, trying without MITM", status);
-        status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
-      }
-      if (status != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initiate pairing: %d", status);
-        this->state_ = ConnectionState::ERROR;
-      } else {
-        this->state_ = ConnectionState::WAITING_PAIRING;
-        this->command_sent_at_ = millis();  // reuse for pairing timeout
-      }
-      break;
-    }
-
-    case ConnectionState::WAITING_PAIRING:
-      // Timeout after 30s waiting for pairing
-      if (millis() - this->command_sent_at_ > 30000) {
-        ESP_LOGW(TAG, "Pairing timeout, proceeding to subscribe anyway");
-        this->state_ = ConnectionState::SUBSCRIBING;
-      }
-      break;
-
     case ConnectionState::SUBSCRIBING:
       // Move to CONNECTED first to prevent re-entry; subscribe_notifications_
       // may overwrite to ERROR if it fails
@@ -389,8 +364,9 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notify_handle_ = notify_chr->handle;
       ESP_LOGI(TAG, "Notify handle: 0x%04X", this->notify_handle_);
 
-      // Initiate BLE pairing before subscribing
-      this->state_ = ConnectionState::PAIRING;
+      // Go straight to notification subscribe — if the mower needs
+      // encryption it will request it via SEC_REQ_EVT (handled in gap_event_handler)
+      this->state_ = ConnectionState::SUBSCRIBING;
       break;
     }
 
@@ -464,18 +440,13 @@ void AutomowerBLE::gap_event_handler(esp_gap_ble_cb_event_t event,
     case ESP_GAP_BLE_AUTH_CMPL_EVT: {
       auto &auth = param->ble_security.auth_cmpl;
       if (auth.success) {
-        ESP_LOGI(TAG, "BLE pairing successful (auth_mode: %d, bonded: %s)",
-                 auth.auth_mode, auth.dev_type == ESP_LE_KEY_LENC ? "yes" : "check");
-        if (this->state_ == ConnectionState::WAITING_PAIRING) {
-          this->state_ = ConnectionState::SUBSCRIBING;
-        }
+        ESP_LOGI(TAG, "BLE pairing successful (auth_mode: %d)", auth.auth_mode);
       } else {
-        ESP_LOGE(TAG, "BLE pairing FAILED (reason: 0x%X)", auth.fail_reason);
-        // Clear stale bond info so next attempt starts fresh
+        ESP_LOGW(TAG, "BLE pairing event (reason: 0x%X) — continuing without encryption", auth.fail_reason);
+        // Clear stale bond info so it doesn't interfere
         esp_ble_remove_bond_device(auth.bd_addr);
-        ESP_LOGW(TAG, "Removed stale bond, will retry on reconnect");
-        // Don't set ERROR — let ble_client reconnect and retry pairing
       }
+      // Don't change state — let the normal flow (subscribe → delay → channel setup) continue
       break;
     }
 
