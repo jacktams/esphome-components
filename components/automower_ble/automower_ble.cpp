@@ -324,9 +324,9 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       // Find our characteristics
-      auto service_uuid = espbt::ESPBTUUID::from_raw(std::string(SERVICE_UUID_STR));
-      auto write_uuid = espbt::ESPBTUUID::from_raw(std::string(WRITE_CHAR_UUID_STR));
-      auto notify_uuid = espbt::ESPBTUUID::from_raw(std::string(NOTIFY_CHAR_UUID_STR));
+      auto service_uuid = esp32_ble_tracker::ESPBTUUID::from_raw(std::string(SERVICE_UUID_STR));
+      auto write_uuid = esp32_ble_tracker::ESPBTUUID::from_raw(std::string(WRITE_CHAR_UUID_STR));
+      auto notify_uuid = esp32_ble_tracker::ESPBTUUID::from_raw(std::string(NOTIFY_CHAR_UUID_STR));
 
       auto *write_chr = this->parent()->get_characteristic(service_uuid, write_uuid);
       if (write_chr == nullptr) {
