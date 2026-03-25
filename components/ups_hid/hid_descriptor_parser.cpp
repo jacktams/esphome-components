@@ -263,7 +263,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     field.is_constant = is_constant;
 
 
-                    if (!field.usage_id == 0 || !is_constant) {
+                    if (!is_constant && field.usage_id != 0) {
                         fields_.push_back(field);
                         fields_added++;
                     }
