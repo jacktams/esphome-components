@@ -3,6 +3,8 @@
 #include "constants_ups.h"
 #include "protocol_factory.h"
 #include "esphome/core/log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <cmath>
 
 namespace esphome {
@@ -10,11 +12,10 @@ namespace ups_hid {
 
 static const char *const EATON_TAG = "ups_hid.eaton";
 
-// Known Eaton/MGE report IDs to probe (Feature then Input)
+// Report IDs known to work on Eaton/MGE devices (from Generic protocol logs)
+// Only probe IDs we've seen succeed — unknown IDs crash the USB stack
 static const uint8_t PROBE_REPORT_IDS[] = {
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
-    0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
-    0x30, 0x31, 0x40, 0x50,
+    0x01, 0x02, 0x03, 0x06, 0x0C, 0x16, 0x30, 0x31,
 };
 
 EatonHidProtocol::EatonHidProtocol(UpsHidComponent *parent)
@@ -45,6 +46,8 @@ bool EatonHidProtocol::initialize() {
             ESP_LOGD(EATON_TAG, "Found Input report 0x%02X (%zu bytes)",
                      id, report_cache_[id].size());
         }
+        // Delay between probes to avoid overwhelming the USB stack
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
     ESP_LOGI(EATON_TAG, "Found %zu available reports", available_report_ids_.size());
