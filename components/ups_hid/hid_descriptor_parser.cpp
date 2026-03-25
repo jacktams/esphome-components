@@ -106,9 +106,13 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
         ESP_LOGI(PARSER_TAG, "  @%04zu: %s", offset, hex.c_str());
     }
 
-    // Parse counters for diagnostics
-    uint32_t total_items = 0, main_items = 0, input_items = 0, feature_items = 0;
-    uint32_t constant_skipped = 0, zero_usage_skipped = 0, fields_added = 0;
+    // Save raw descriptor for later dumping via API logs
+    raw_descriptor.assign(data, data + len);
+
+    // Reset parse counters
+    total_items = main_items = input_items = feature_items = 0;
+    constant_skipped = zero_usage_skipped = 0;
+    uint32_t fields_added = 0;
 
     size_t pos = 0;
     while (pos < len) {

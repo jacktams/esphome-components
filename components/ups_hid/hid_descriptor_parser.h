@@ -43,6 +43,13 @@ public:
     // Get total byte size for a report (excluding report ID byte)
     size_t get_report_byte_size(uint8_t report_type, uint8_t report_id) const;
 
+    // Parse diagnostics
+    uint32_t total_items{0}, main_items{0}, input_items{0}, feature_items{0};
+    uint32_t constant_skipped{0}, zero_usage_skipped{0};
+
+    // Store raw descriptor for later dumping
+    std::vector<uint8_t> raw_descriptor;
+
 private:
     std::vector<HidField> fields_;
 

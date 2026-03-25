@@ -231,15 +231,33 @@ bool EatonHidProtocol::read_data(UpsData &data) {
              success, descriptor_available_ ? "YES" : "NO",
              descriptor_available_ ? descriptor_parser_.get_fields().size() : 0);
 
-    // Log field map for first 5 cycles so it's captured in API logs
-    if (first_read_ < 5) {
+    // Log diagnostics for first 3 cycles so it's captured in API logs
+    if (first_read_ < 3) {
         if (first_read_ == 0) {
             log_all_reports();
+            // Dump raw descriptor hex (logged here because init logs are missed)
+            if (descriptor_available_ && !descriptor_parser_.raw_descriptor.empty()) {
+                const auto& raw = descriptor_parser_.raw_descriptor;
+                ESP_LOGD(EATON_TAG, "Raw HID descriptor: %zu bytes", raw.size());
+                for (size_t offset = 0; offset < raw.size(); offset += 32) {
+                    std::string hex;
+                    for (size_t i = offset; i < std::min(raw.size(), offset + 32); i++) {
+                        char buf[4];
+                        snprintf(buf, sizeof(buf), "%02X ", raw[i]);
+                        hex += buf;
+                    }
+                    ESP_LOGD(EATON_TAG, "  @%04zu: %s", offset, hex.c_str());
+                }
+            }
         }
         if (descriptor_available_) {
             const auto& fields = descriptor_parser_.get_fields();
-            ESP_LOGD(EATON_TAG, "Descriptor field map (%zu fields, desc_size=%zu):",
-                     fields.size(), descriptor_size_);
+            ESP_LOGD(EATON_TAG, "Descriptor: %zu fields, %zu bytes "
+                     "(items=%u main=%u in=%u feat=%u const_skip=%u zero_skip=%u)",
+                     fields.size(), descriptor_size_,
+                     descriptor_parser_.total_items, descriptor_parser_.main_items,
+                     descriptor_parser_.input_items, descriptor_parser_.feature_items,
+                     descriptor_parser_.constant_skipped, descriptor_parser_.zero_usage_skipped);
             for (const auto& f : fields) {
                 const char* type_str = (f.report_type == 1) ? "In" :
                                        (f.report_type == 2) ? "Out" : "Feat";
