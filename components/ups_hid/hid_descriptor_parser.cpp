@@ -95,8 +95,6 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
     // Per-report bit offset tracking: key = (report_type << 8) | report_id
     std::map<uint16_t, uint16_t> bit_offsets;
 
-
-
     uint32_t fields_added = 0;
 
     size_t pos = 0;
@@ -111,7 +109,6 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
             continue;
         }
 
-        total_items++;
         // Short item
         uint8_t item_size = prefix & 0x03;
         if (item_size == 3) item_size = 4; // size code 3 means 4 bytes
@@ -205,11 +202,8 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
             case MAIN_INPUT:
             case MAIN_OUTPUT:
             case MAIN_FEATURE: {
-                main_items++;
                 uint8_t rtype = (item_tag == MAIN_INPUT) ? 1 :
                                 (item_tag == MAIN_OUTPUT) ? 2 : 3;
-                if (rtype == 1) input_items++;
-                if (rtype == 3) feature_items++;
                 // HID Main item flags:
                 //   Bit 0: 0=Data, 1=Constant
                 //   Bit 1: 0=Array, 1=Variable
@@ -268,11 +262,8 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     field.parent_collection = parent;
                     field.is_constant = is_constant;
 
-                    if (is_constant) {
-                        constant_skipped++;
-                    } else if (field.usage_id == 0) {
-                        zero_usage_skipped++;
-                    } else {
+
+                    if (!field.usage_id == 0 || !is_constant) {
                         fields_.push_back(field);
                         fields_added++;
                     }
@@ -304,10 +295,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
         pos += item_size;
     }
 
-    ESP_LOGI(PARSER_TAG, "Parsed HID descriptor: %zu fields from %zu bytes "
-             "(items=%u, main=%u, input=%u, feature=%u, const_skip=%u, zero_skip=%u)",
-             fields_.size(), len, total_items, main_items, input_items, feature_items,
-             constant_skipped, zero_usage_skipped);
+    ESP_LOGI(PARSER_TAG, "Parsed HID descriptor: %zu fields from %zu bytes", fields_.size(), len);
     return !fields_.empty();
 }
 
