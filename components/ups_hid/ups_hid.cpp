@@ -349,12 +349,18 @@ void UpsHidComponent::update_sensors() {
     
     bool state = false;
     
-    if (type == binary_sensor_type::ONLINE && ups_data_.power.input_voltage_valid()) {
-      state = true;
-    } else if (type == binary_sensor_type::ON_BATTERY && ups_data_.power.input_voltage_valid()) {
-      state = false; // Opposite of online
+    if (type == binary_sensor_type::ONLINE) {
+      state = ups_data_.power.status == status::ONLINE;
+    } else if (type == binary_sensor_type::ON_BATTERY) {
+      state = ups_data_.power.status == status::ON_BATTERY;
     } else if (type == binary_sensor_type::LOW_BATTERY) {
       state = ups_data_.battery.is_low();
+    } else if (type == binary_sensor_type::CHARGING) {
+      state = ups_data_.battery.status.find(battery_status::CHARGING) != std::string::npos;
+    } else if (type == binary_sensor_type::DISCHARGING) {
+      state = ups_data_.battery.status.find(battery_status::DISCHARGING) != std::string::npos;
+    } else if (type == binary_sensor_type::OVERLOAD) {
+      state = ups_data_.power.is_overloaded();
     }
     
     sensor->publish_state(state);

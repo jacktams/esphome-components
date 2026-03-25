@@ -55,6 +55,27 @@ bool EatonHidProtocol::initialize() {
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
+    // If descriptor is available, also probe any Input report IDs it defines
+    // that we haven't tried yet — the descriptor confirms these exist on the device
+    if (descriptor_available_) {
+        auto desc_input_ids = descriptor_parser_.get_report_ids(1);  // Input type
+        for (uint8_t id : desc_input_ids) {
+            // Skip if already probed
+            bool already_probed = false;
+            for (uint8_t existing : available_report_ids_) {
+                if (existing == id) { already_probed = true; break; }
+            }
+            if (already_probed) continue;
+
+            if (read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
+                available_report_ids_.push_back(id);
+                ESP_LOGI(EATON_TAG, "Found descriptor Input report 0x%02X (%zu data bytes)",
+                         id, report_cache_[id].size());
+            }
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+
     ESP_LOGI(EATON_TAG, "Found %zu available reports", available_report_ids_.size());
 
     if (available_report_ids_.empty()) {
@@ -62,21 +83,13 @@ bool EatonHidProtocol::initialize() {
         return false;
     }
 
-    // Read device strings
+    // Read device strings (indices 1-3 standard, 4+ may have firmware)
     std::string str;
-    if (parent_->get_string_descriptor(1, str) == ESP_OK && !str.empty()) {
-        ESP_LOGI(EATON_TAG, "Manufacturer: %s", str.c_str());
-    }
-    if (parent_->get_string_descriptor(2, str) == ESP_OK && !str.empty()) {
-        ESP_LOGI(EATON_TAG, "Product: %s", str.c_str());
-    }
-
-    // Log all report data for debugging
-    log_all_reports();
-
-    // Log descriptor field mappings if available
-    if (descriptor_available_) {
-        log_descriptor_fields();
+    for (uint8_t idx = 1; idx <= 5; idx++) {
+        if (parent_->get_string_descriptor(idx, str) == ESP_OK && !str.empty()) {
+            ESP_LOGI(EATON_TAG, "String descriptor %u: %s", idx, str.c_str());
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 
     ESP_LOGI(EATON_TAG, "Eaton HID protocol initialized (descriptor: %s)",
@@ -737,22 +750,43 @@ void EatonHidProtocol::parse_config(UpsData &data) {
 }
 
 void EatonHidProtocol::read_device_strings(UpsData &data) {
+    std::string str;
     if (data.device.manufacturer.empty()) {
-        std::string str;
         if (parent_->get_string_descriptor(1, str) == ESP_OK && !str.empty()) {
             data.device.manufacturer = str;
         }
     }
     if (data.device.model.empty()) {
-        std::string str;
         if (parent_->get_string_descriptor(2, str) == ESP_OK && !str.empty()) {
             data.device.model = str;
         }
     }
     if (data.device.serial_number.empty()) {
-        std::string str;
         if (parent_->get_string_descriptor(3, str) == ESP_OK && !str.empty()) {
             data.device.serial_number = str;
+        }
+    }
+    // Try string descriptors 4-5 for firmware version (Eaton sometimes puts it there)
+    if (data.device.firmware_version.empty()) {
+        for (uint8_t idx = 4; idx <= 5; idx++) {
+            if (parent_->get_string_descriptor(idx, str) == ESP_OK && !str.empty()) {
+                data.device.firmware_version = str;
+                break;
+            }
+        }
+    }
+    // Try descriptor for firmware string index (iProduct variant)
+    if (data.device.firmware_version.empty() && descriptor_available_) {
+        int32_t value;
+        // Usage 0x84:0x00FD = iManufacturer, 0x84:0x00FE = iProduct, 0x84:0x00FF = iSerialNumber
+        // Some devices put firmware in vendor-specific string indices
+        if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE, 0x00FE, value)) {
+            if (value > 0 && value < 256) {
+                if (parent_->get_string_descriptor(static_cast<uint8_t>(value), str) == ESP_OK
+                    && !str.empty() && str != data.device.model) {
+                    data.device.firmware_version = str;
+                }
+            }
         }
     }
     data.device.usb_vendor_id = parent_->get_vendor_id();
