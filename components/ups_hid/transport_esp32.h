@@ -47,11 +47,6 @@ public:
     
     std::string get_last_error() const override;
 
-    bool is_initialized() const override { return initialized_.load(); }
-    bool are_tasks_running() const override { return usb_tasks_running_.load(); }
-    bool has_client_handle() const override { return device_.client_hdl != nullptr; }
-    void poll_for_devices() override;
-
 private:
     // USB device structure
     struct UsbDevice {
@@ -77,7 +72,6 @@ private:
     TaskHandle_t usb_lib_task_handle_{nullptr};
     TaskHandle_t usb_client_task_handle_{nullptr};
     std::atomic<bool> usb_tasks_running_{false};
-    bool usb_host_owned_{true};  // Whether we installed the USB Host library ourselves
     
     // Error handling
     mutable std::mutex error_mutex_;
@@ -98,7 +92,6 @@ private:
     esp_err_t find_endpoints();
     
     void set_last_error(const std::string& error);
-    bool matches_device_filter(uint16_t vid, uint16_t pid) const;
     esp_err_t submit_control_transfer(uint8_t bmRequestType, uint8_t bRequest,
                                     uint16_t wValue, uint16_t wIndex,
                                     uint8_t* data, size_t data_len,

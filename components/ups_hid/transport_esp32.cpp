@@ -421,46 +421,6 @@ void Esp32UsbTransport::set_last_error(const std::string& error) {
     ESP_LOGW(ESP32_USB_TAG, "%s", error.c_str());
 }
 
-bool Esp32UsbTransport::matches_device_filter(uint16_t vid, uint16_t pid) const {
-    // If explicit VID/PID filter is set, require exact match
-    if (filter_vendor_id_ != 0 && filter_product_id_ != 0) {
-        bool match = (vid == filter_vendor_id_ && pid == filter_product_id_);
-        if (!match) {
-            ESP_LOGD(ESP32_USB_TAG, "Device VID=0x%04X PID=0x%04X doesn't match filter VID=0x%04X PID=0x%04X",
-                     vid, pid, filter_vendor_id_, filter_product_id_);
-        }
-        return match;
-    }
-
-    // Auto-detect mode: check against known UPS vendor IDs
-    static const uint16_t known_ups_vendors[] = {
-        0x0463, // MGE Office Protection Systems / Eaton
-        0x047C, // Dell
-        0x0483, // STMicroelectronics
-        0x04B3, // IBM
-        0x04D8, // OpenUPS
-        0x050D, // Belkin
-        0x051D, // APC
-        0x0592, // Powerware
-        0x05DD, // Delta Electronics
-        0x06DA, // MGE UPS Systems
-        0x075D, // Idowell
-        0x0764, // CyberPower
-        0x09AE, // Tripp Lite
-        0x09D6, // KSTAR
-    };
-
-    for (uint16_t known_vid : known_ups_vendors) {
-        if (vid == known_vid) {
-            ESP_LOGD(ESP32_USB_TAG, "Device VID=0x%04X matches known UPS vendor", vid);
-            return true;
-        }
-    }
-
-    ESP_LOGD(ESP32_USB_TAG, "Device VID=0x%04X is not a known UPS vendor", vid);
-    return false;
-}
-
 esp_err_t Esp32UsbTransport::setup_usb_host() {
     // Create USB library task - USB Host installation happens inside the task
     if (!usb_tasks_running_.load()) {
@@ -527,82 +487,41 @@ esp_err_t Esp32UsbTransport::teardown_usb_host() {
 esp_err_t Esp32UsbTransport::find_and_open_device() {
     // Register USB client in asynchronous mode for event-driven device detection
     usb_host_client_config_t client_config = {
-        .is_synchronous = false,
+        .is_synchronous = false,  // Use asynchronous mode for USB_HOST_CLIENT_EVENT_NEW_DEV events
         .max_num_event_msg = 5,
         .async = {
             .client_event_callback = usb_client_event_callback,
             .callback_arg = this
         }
     };
-
-    // When another component owns USB Host, give it time to finish enumeration
-    if (!usb_host_owned_) {
-        ESP_LOGI(ESP32_USB_TAG, "Waiting for USB Host component to finish device enumeration...");
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-
+    
     esp_err_t ret = usb_host_client_register(&client_config, &device_.client_hdl);
     if (ret != ESP_OK) {
         set_last_error("Client register failed: " + std::string(esp_err_to_name(ret)));
-        ESP_LOGE(ESP32_USB_TAG, "USB client register failed: %s", esp_err_to_name(ret));
         return ret;
     }
-
-    ESP_LOGI(ESP32_USB_TAG, "USB client registered (handle=0x%p), waiting for device connection events...",
+    
+    ESP_LOGI(ESP32_USB_TAG, "USB client registered (handle=0x%p), waiting for device connection events...", 
              device_.client_hdl);
-
-    // Check for already-enumerated devices
-    vTaskDelay(pdMS_TO_TICKS(100));
-
+    
+    // Force immediate device enumeration check in addition to event-driven detection
+    ESP_LOGI(ESP32_USB_TAG, "Performing immediate device enumeration check...");
+    vTaskDelay(pdMS_TO_TICKS(100)); // Small delay for USB stack to stabilize
+    
     int num_dev = 10;
     uint8_t dev_addr_list[10];
     esp_err_t enum_ret = usb_host_device_addr_list_fill(num_dev, dev_addr_list, &num_dev);
     if (enum_ret == ESP_OK && num_dev > 0) {
-        ESP_LOGI(ESP32_USB_TAG, "Found %d existing USB devices during enumeration:", num_dev);
+        ESP_LOGI(ESP32_USB_TAG, "Found %d existing USB devices during initial enumeration:", num_dev);
         for (int i = 0; i < num_dev; i++) {
-            ESP_LOGI(ESP32_USB_TAG, "  Attempting to handle device at address %d", dev_addr_list[i]);
+            ESP_LOGI(ESP32_USB_TAG, "  Attempting to handle existing device at address %d", dev_addr_list[i]);
             handle_new_device(dev_addr_list[i]);
         }
     } else {
-        ESP_LOGI(ESP32_USB_TAG, "No USB devices found yet (enum_ret=%s, num_dev=%d) - waiting for connection events",
-                 esp_err_to_name(enum_ret), num_dev);
+        ESP_LOGI(ESP32_USB_TAG, "No existing USB devices found - waiting for connection events");
     }
-
+    
     return ESP_OK;
-}
-
-void Esp32UsbTransport::poll_for_devices() {
-    if (!initialized_.load() || !device_.client_hdl) {
-        return;
-    }
-
-    // Process any pending client events from main loop context
-    if (device_.client_hdl) {
-        esp_err_t ret = usb_host_client_handle_events(device_.client_hdl, 0);
-        if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT) {
-            ESP_LOGW(ESP32_USB_TAG, "Client handle_events error: %s", esp_err_to_name(ret));
-        }
-    }
-
-    // Enumerate devices on the bus
-    int num_dev = 10;
-    uint8_t dev_addr_list[10];
-    esp_err_t ret = usb_host_device_addr_list_fill(num_dev, dev_addr_list, &num_dev);
-    if (ret == ESP_OK) {
-        if (num_dev > 0) {
-            ESP_LOGI(ESP32_USB_TAG, "Bus scan: %d device(s) found", num_dev);
-            for (int i = 0; i < num_dev; i++) {
-                ESP_LOGI(ESP32_USB_TAG, "  Device at address %d", dev_addr_list[i]);
-                if (!connected_.load()) {
-                    handle_new_device(dev_addr_list[i]);
-                }
-            }
-        } else {
-            ESP_LOGD(ESP32_USB_TAG, "Bus scan: no devices on bus");
-        }
-    } else {
-        ESP_LOGW(ESP32_USB_TAG, "Bus scan failed: %s", esp_err_to_name(ret));
-    }
 }
 
 esp_err_t Esp32UsbTransport::claim_interface() {
@@ -816,35 +735,14 @@ void Esp32UsbTransport::handle_new_device(uint8_t dev_addr) {
     if (ret == ESP_OK) {
         device_.vendor_id = device_desc->idVendor;
         device_.product_id = device_desc->idProduct;
-
-        ESP_LOGI(ESP32_USB_TAG, "USB device opened: VID=0x%04X, PID=0x%04X, Class=0x%02X, Speed=%d",
-                 device_.vendor_id, device_.product_id, device_desc->bDeviceClass, dev_info.speed);
-
-        // Check VID/PID filter - skip devices that don't match
-        if (!matches_device_filter(device_.vendor_id, device_.product_id)) {
-            ESP_LOGW(ESP32_USB_TAG, "Device VID=0x%04X PID=0x%04X does not match filter - skipping",
-                     device_.vendor_id, device_.product_id);
-            usb_host_device_close(device_.client_hdl, device_.dev_hdl);
-            device_.dev_hdl = nullptr;
-            device_.vendor_id = 0;
-            device_.product_id = 0;
-            return;
-        }
-
-        // Reject USB hubs (class 0x09) - they are never UPS devices
-        if (device_desc->bDeviceClass == 0x09) {
-            ESP_LOGW(ESP32_USB_TAG, "Device is a USB hub (class=0x09) - skipping");
-            usb_host_device_close(device_.client_hdl, device_.dev_hdl);
-            device_.dev_hdl = nullptr;
-            device_.vendor_id = 0;
-            device_.product_id = 0;
-            return;
-        }
-
+        
+        ESP_LOGI(ESP32_USB_TAG, "USB device opened: VID=0x%04X, PID=0x%04X, Speed=%d", 
+                 device_.vendor_id, device_.product_id, dev_info.speed);
+        
         // Check if this is a UPS device (HID class)
-        if (device_desc->bDeviceClass == USB_CLASS_HID ||
+        if (device_desc->bDeviceClass == USB_CLASS_HID || 
             device_desc->bDeviceClass == 0x00) { // Device class defined at interface level
-
+            
             // Try to claim HID interface and find endpoints
             ret = claim_interface();
             if (ret == ESP_OK) {
@@ -863,8 +761,6 @@ void Esp32UsbTransport::handle_new_device(uint8_t dev_addr) {
     // Clean up on failure
     usb_host_device_close(device_.client_hdl, device_.dev_hdl);
     device_.dev_hdl = nullptr;
-    device_.vendor_id = 0;
-    device_.product_id = 0;
 }
 
 void Esp32UsbTransport::handle_device_gone(usb_device_handle_t dev_hdl) {
@@ -903,36 +799,29 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
     };
 
     esp_err_t ret = usb_host_install(&host_config);
-    if (ret == ESP_ERR_INVALID_STATE) {
-        // USB Host already installed (e.g. by ESPHome's usb_host component)
-        // Don't run our own event loop - ESPHome's loop() handles library events
-        ESP_LOGI(ESP32_USB_TAG, "USB Host library already installed by another component - skipping event loop");
-        transport->usb_host_owned_ = false;
-        vTaskDelete(nullptr);
-        return;
-    } else if (ret != ESP_OK) {
+    if (ret != ESP_OK) {
         ESP_LOGE(ESP32_USB_TAG, "USB Host install failed: %s", esp_err_to_name(ret));
-        transport->usb_tasks_running_ = false;
+        transport->usb_tasks_running_ = false; // Stop other tasks
         vTaskDelete(nullptr);
         return;
     }
 
     ESP_LOGI(ESP32_USB_TAG, "USB Host library installed successfully");
-    transport->usb_host_owned_ = true;
-
-    // Main USB Host event loop - only runs when we own the USB Host library
+    
+    // Main USB Host event loop - following working prototype pattern
     bool has_clients = true;
     bool has_devices = false;
-
+    
     while (has_clients && transport->usb_tasks_running_.load()) {
         uint32_t event_flags;
         ret = usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
-
+        
         if (ret != ESP_OK) {
             ESP_LOGE(ESP32_USB_TAG, "USB Host event handling failed: %s", esp_err_to_name(ret));
             continue;
         }
 
+        // Handle USB Host events (following ESP-IDF v5.4 patterns)
         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
             ESP_LOGI(ESP32_USB_TAG, "No more USB clients");
             if (usb_host_device_free_all() == ESP_OK) {
@@ -943,16 +832,17 @@ void Esp32UsbTransport::usb_lib_task(void* arg) {
                 has_devices = true;
             }
         }
-
+        
         if (has_devices && (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE)) {
             ESP_LOGI(ESP32_USB_TAG, "All devices freed");
             has_clients = false;
         }
     }
-
+    
+    // Cleanup USB Host library
     ESP_LOGI(ESP32_USB_TAG, "Uninstalling USB Host library");
     usb_host_uninstall();
-
+    
     ESP_LOGI(ESP32_USB_TAG, "USB Host Library task ending");
     vTaskDelete(nullptr);
 }

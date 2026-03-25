@@ -32,18 +32,9 @@ void UpsHidComponent::setup() {
 }
 
 void UpsHidComponent::update() {
-  if (!transport_) {
-    ESP_LOGD(TAG, "No transport instance available");
-    return;
-  }
-  if (!transport_->is_connected()) {
-    // Poll for devices from main loop context (ensures logs are visible over API)
-    transport_->poll_for_devices();
-    ESP_LOGD(TAG, "USB transport not connected - waiting for device (initialized=%s, tasks=%s, client=%s, last_error='%s')",
-             transport_->is_initialized() ? "yes" : "no",
-             transport_->are_tasks_running() ? "yes" : "no",
-             transport_->has_client_handle() ? "yes" : "no",
-             transport_->get_last_error().c_str());
+  if (!transport_ || !transport_->is_connected()) {
+    // Device not connected yet - normal during startup or after disconnection
+    ESP_LOGD(TAG, log_messages::WAITING_FOR_DEVICE);
     return;
   }
   
@@ -174,9 +165,6 @@ bool UpsHidComponent::initialize_transport() {
     ESP_LOGE(TAG, "Failed to create transport instance");
     return false;
   }
-
-  // Pass configured VID/PID filter to transport before initialization
-  transport_->set_device_filter(usb_vendor_id_, usb_product_id_);
 
   esp_err_t ret = transport_->initialize();
   if (ret != ESP_OK) {
