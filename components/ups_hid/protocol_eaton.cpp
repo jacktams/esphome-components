@@ -167,22 +167,35 @@ bool EatonHidProtocol::read_field_from_descriptor(uint16_t usage_page, uint16_t 
                                                     uint16_t parent_collection) {
     if (!descriptor_available_) return false;
 
-    const HidField *field = descriptor_parser_.find_field(usage_page, usage_id,
-                                                           report_type, parent_collection);
-    if (!field) return false;
+    // Try the requested report type first, then fall back to other types.
+    // Eaton devices define many fields under Feature reports (type=3) in the
+    // descriptor, but Input reports (type=1) with the same report ID often
+    // share the same byte layout. So if we can't find a field in Input reports,
+    // we try Feature report field positions against our cached Input data.
+    static const uint8_t try_types[] = {0, 1, 3, 2};  // 0 = requested type
+    for (uint8_t t : try_types) {
+        uint8_t search_type = (t == 0) ? report_type : t;
+        if (t != 0 && search_type == report_type) continue;  // skip duplicate
 
-    auto it = report_cache_.find(field->report_id);
-    if (it == report_cache_.end() || it->second.empty()) return false;
+        const HidField *field = descriptor_parser_.find_field(usage_page, usage_id,
+                                                               search_type, parent_collection);
+        if (!field) continue;
 
-    value = extract_field_value(it->second, field->bit_offset, field->bit_size);
+        auto it = report_cache_.find(field->report_id);
+        if (it == report_cache_.end() || it->second.empty()) continue;
 
-    // Clamp to logical range if defined
-    if (field->logical_max > field->logical_min) {
-        if (value < field->logical_min) value = field->logical_min;
-        if (value > field->logical_max) value = field->logical_max;
+        value = extract_field_value(it->second, field->bit_offset, field->bit_size);
+
+        // Clamp to logical range if defined
+        if (field->logical_max > field->logical_min) {
+            if (value < field->logical_min) value = field->logical_min;
+            if (value > field->logical_max) value = field->logical_max;
+        }
+
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 bool EatonHidProtocol::read_data(UpsData &data) {
