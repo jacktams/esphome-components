@@ -36,6 +36,18 @@ enum HidGlobalTag {
     GLOBAL_REPORT_SIZE = 0x07,
     GLOBAL_REPORT_ID = 0x08,
     GLOBAL_REPORT_COUNT = 0x09,
+    GLOBAL_PUSH = 0x0A,
+    GLOBAL_POP = 0x0B,
+};
+
+// Stackable global state for Push/Pop
+struct GlobalState {
+    uint16_t usage_page{0};
+    int32_t logical_min{0};
+    int32_t logical_max{0};
+    uint32_t report_size{0};
+    uint32_t report_count{0};
+    uint8_t report_id{0};
 };
 
 // HID local item tags
@@ -67,13 +79,9 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
     fields_.clear();
     report_max_bits_.clear();
 
-    // Global state
-    uint16_t usage_page = 0;
-    int32_t logical_min = 0;
-    int32_t logical_max = 0;
-    uint32_t report_size = 0;   // bits per field
-    uint32_t report_count = 0;  // number of fields
-    uint8_t report_id = 0;
+    // Global state (stackable via Push/Pop)
+    GlobalState gs;
+    std::vector<GlobalState> global_stack;
 
     // Local state (reset after each Main item)
     std::vector<uint16_t> usages;
@@ -114,22 +122,31 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
         case ITEM_TYPE_GLOBAL:
             switch (item_tag) {
             case GLOBAL_USAGE_PAGE:
-                usage_page = value & 0xFFFF;
+                gs.usage_page = value & 0xFFFF;
                 break;
             case GLOBAL_LOGICAL_MIN:
-                logical_min = parse_signed(item_data, item_size);
+                gs.logical_min = parse_signed(item_data, item_size);
                 break;
             case GLOBAL_LOGICAL_MAX:
-                logical_max = parse_signed(item_data, item_size);
+                gs.logical_max = parse_signed(item_data, item_size);
                 break;
             case GLOBAL_REPORT_SIZE:
-                report_size = value;
+                gs.report_size = value;
                 break;
             case GLOBAL_REPORT_COUNT:
-                report_count = value;
+                gs.report_count = value;
                 break;
             case GLOBAL_REPORT_ID:
-                report_id = value & 0xFF;
+                gs.report_id = value & 0xFF;
+                break;
+            case GLOBAL_PUSH:
+                global_stack.push_back(gs);
+                break;
+            case GLOBAL_POP:
+                if (!global_stack.empty()) {
+                    gs = global_stack.back();
+                    global_stack.pop_back();
+                }
                 break;
             default:
                 break;
@@ -143,7 +160,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     usages.push_back(value & 0xFFFF);
                 } else {
                     // 4-byte usage: high word is usage page override
-                    usage_page = (value >> 16) & 0xFFFF;
+                    gs.usage_page = (value >> 16) & 0xFFFF;
                     usages.push_back(value & 0xFFFF);
                 }
                 break;
@@ -185,30 +202,30 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                                 (item_tag == MAIN_OUTPUT) ? 2 : 3;
                 bool is_constant = (value & 0x01) != 0; // bit 0 = Constant
 
-                uint16_t offset_key = (rtype << 8) | report_id;
+                uint16_t offset_key = (rtype << 8) | gs.report_id;
                 if (bit_offsets.find(offset_key) == bit_offsets.end()) {
                     bit_offsets[offset_key] = 0;
                 }
 
                 // Fill usages from usage range if individual usages not provided
                 if (usages.empty() && usage_min <= usage_max) {
-                    for (uint16_t u = usage_min; u <= usage_max && usages.size() < report_count; u++) {
+                    for (uint16_t u = usage_min; u <= usage_max && usages.size() < gs.report_count; u++) {
                         usages.push_back(u);
                     }
                 }
 
                 // Emit one HidField per usage (or per report_count if no usages)
                 uint16_t parent = collection_stack.empty() ? 0 : collection_stack.back();
-                for (uint32_t i = 0; i < report_count; i++) {
+                for (uint32_t i = 0; i < gs.report_count; i++) {
                     HidField field{};
                     field.report_type = rtype;
-                    field.report_id = report_id;
-                    field.usage_page = usage_page;
+                    field.report_id = gs.report_id;
+                    field.usage_page = gs.usage_page;
                     field.usage_id = (i < usages.size()) ? usages[i] : 0;
                     field.bit_offset = bit_offsets[offset_key];
-                    field.bit_size = report_size;
-                    field.logical_min = logical_min;
-                    field.logical_max = logical_max;
+                    field.bit_size = gs.report_size;
+                    field.logical_min = gs.logical_min;
+                    field.logical_max = gs.logical_max;
                     field.parent_collection = parent;
                     field.is_constant = is_constant;
 
@@ -216,7 +233,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                         fields_.push_back(field);
                     }
 
-                    bit_offsets[offset_key] += report_size;
+                    bit_offsets[offset_key] += gs.report_size;
                 }
 
                 // Track max bits for report size calculation
