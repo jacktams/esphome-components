@@ -171,7 +171,7 @@ void AutomowerBLE::write_data_(const std::vector<uint8_t> &data) {
         this->write_handle_,
         len,
         const_cast<uint8_t *>(data.data() + i),
-        ESP_GATT_WRITE_TYPE_NO_RSP,
+        ESP_GATT_WRITE_TYPE_RSP,
         ESP_GATT_AUTH_REQ_NONE);
 
     if (status != ESP_OK) {
@@ -420,7 +420,7 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         return;
       }
       this->write_handle_ = write_chr->handle;
-      ESP_LOGI(TAG, "Write handle: 0x%04X", this->write_handle_);
+      ESP_LOGI(TAG, "Write handle: 0x%04X, properties: 0x%02X", this->write_handle_, write_chr->properties);
 
       auto *notify_chr = this->parent()->get_characteristic(service_uuid, notify_uuid);
       if (notify_chr == nullptr) {
@@ -429,7 +429,7 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         return;
       }
       this->notify_handle_ = notify_chr->handle;
-      ESP_LOGI(TAG, "Notify handle: 0x%04X", this->notify_handle_);
+      ESP_LOGI(TAG, "Notify handle: 0x%04X, properties: 0x%02X", this->notify_handle_, notify_chr->properties);
 
       // Probe readable characteristics (the Python code reads all chars before subscribing)
       auto device_uuid = esp32_ble_tracker::ESPBTUUID::from_raw(
@@ -465,6 +465,15 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         }
       });
       this->state_ = ConnectionState::CONNECTED;  // park here until timeout fires
+      break;
+    }
+
+    case ESP_GATTC_WRITE_CHAR_EVT: {
+      if (param->write.status == ESP_GATT_OK) {
+        ESP_LOGI(TAG, "Write confirmed (handle 0x%04X)", param->write.handle);
+      } else {
+        ESP_LOGE(TAG, "Write FAILED (handle 0x%04X, status: %d)", param->write.handle, param->write.status);
+      }
       break;
     }
 
