@@ -37,13 +37,10 @@ bool EatonHidProtocol::detect() {
 bool EatonHidProtocol::initialize() {
     ESP_LOGI(EATON_TAG, "Initializing Eaton HID protocol...");
 
-    // Discover available reports by probing Feature and Input report types
+    // Discover available reports by probing Input reports only
+    // (Feature report requests crash the USB stack on this device)
     for (uint8_t id : PROBE_REPORT_IDS) {
-        if (read_report(HID_REPORT_TYPE_FEATURE, id, 8)) {
-            available_report_ids_.push_back(id);
-            ESP_LOGD(EATON_TAG, "Found Feature report 0x%02X (%zu bytes)",
-                     id, report_cache_[id].size());
-        } else if (read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
+        if (read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
             available_report_ids_.push_back(id);
             ESP_LOGD(EATON_TAG, "Found Input report 0x%02X (%zu bytes)",
                      id, report_cache_[id].size());
@@ -99,12 +96,10 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
-    // Re-read all discovered reports
+    // Re-read all discovered reports (Input only)
     int success = 0;
     for (uint8_t id : available_report_ids_) {
-        // Try Feature first, then Input
-        if (read_report(HID_REPORT_TYPE_FEATURE, id, 8) ||
-            read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
+        if (read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
             success++;
         }
     }
