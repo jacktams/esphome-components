@@ -32,16 +32,17 @@ bool EatonHidProtocol::detect() {
 bool EatonHidProtocol::initialize() {
     ESP_LOGI(EATON_TAG, "Initializing Eaton HID protocol...");
 
-    // Read and parse the HID report descriptor
-    uint8_t desc_buf[2048];
-    size_t desc_len = sizeof(desc_buf);
-    esp_err_t ret = parent_->get_hid_report_descriptor(desc_buf, &desc_len);
+    // Read and parse the HID report descriptor (heap-allocated to avoid stack overflow)
+    const size_t max_desc_size = 2048;
+    auto desc_buf = std::unique_ptr<uint8_t[]>(new uint8_t[max_desc_size]);
+    size_t desc_len = max_desc_size;
+    esp_err_t ret = parent_->get_hid_report_descriptor(desc_buf.get(), &desc_len);
     if (ret != ESP_OK || desc_len == 0) {
-        ESP_LOGE(EATON_TAG, "Failed to read HID report descriptor");
+        ESP_LOGE(EATON_TAG, "Failed to read HID report descriptor: %s", esp_err_to_name(ret));
         return false;
     }
 
-    if (!parser_.parse(desc_buf, desc_len)) {
+    if (!parser_.parse(desc_buf.get(), desc_len)) {
         ESP_LOGE(EATON_TAG, "Failed to parse HID report descriptor");
         return false;
     }
