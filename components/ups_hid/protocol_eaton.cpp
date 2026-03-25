@@ -6,7 +6,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <cmath>
-#include <initializer_list>
 
 namespace esphome {
 namespace ups_hid {
@@ -204,8 +203,14 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
+    // Log descriptor status and all report hex dumps so diagnostics are visible
+    // even when init logs were missed (API connects after boot)
     if (first_read_) {
+        ESP_LOGI(EATON_TAG, "Descriptor available: %s", descriptor_available_ ? "YES" : "NO");
         log_all_reports();
+        if (descriptor_available_) {
+            log_descriptor_fields();
+        }
         first_read_ = false;
     }
 
@@ -229,35 +234,51 @@ void EatonHidProtocol::parse_power_summary(UpsData &data) {
         }
         ESP_LOGD(EATON_TAG, "Battery level (descriptor): %d%%", value);
     } else {
-        // Fallback: Report 0x0C byte 0 = battery percentage
+        // Fallback: Report 0x0C on Eaton 5P
+        // Empirical layout (4 data bytes after report ID strip):
+        //   d[0..1] = RunTimeToEmpty in seconds (LE uint16)
+        //   d[2]    = RemainingCapacity (battery %)
+        //   d[3]    = flags/padding
         auto it = report_cache_.find(0x0C);
-        if (it != report_cache_.end() && !it->second.empty()) {
-            uint8_t battery_pct = it->second[0];
-            if (battery_pct <= 100) {
-                data.battery.level = static_cast<float>(battery_pct);
+        if (it != report_cache_.end()) {
+            const auto& d = it->second;
+            // Log all bytes for diagnostics
+            std::string hex;
+            for (size_t i = 0; i < d.size(); i++) {
+                char buf[4]; snprintf(buf, sizeof(buf), "%02X ", d[i]); hex += buf;
             }
-            ESP_LOGD(EATON_TAG, "Battery level (fallback): %u%%", battery_pct);
+            ESP_LOGD(EATON_TAG, "Report 0x0C [%zu]: %s", d.size(), hex.c_str());
+
+            // Battery percentage at byte 2
+            if (d.size() >= 3) {
+                uint8_t battery_pct = d[2];
+                if (battery_pct <= 100) {
+                    data.battery.level = static_cast<float>(battery_pct);
+                }
+                ESP_LOGD(EATON_TAG, "Battery level (fallback d[2]): %u%%", battery_pct);
+            }
+
+            // Runtime at bytes 0-1 in seconds (LE uint16)
+            if (d.size() >= 2) {
+                uint16_t runtime_sec = d[0] | (d[1] << 8);
+                if (runtime_sec > 0 && runtime_sec < 65535) {
+                    data.battery.runtime_minutes = static_cast<float>(runtime_sec) / 60.0f;
+                }
+                ESP_LOGD(EATON_TAG, "Runtime (fallback d[0:1]): %u sec = %.1f min",
+                         runtime_sec, data.battery.runtime_minutes);
+            }
         }
     }
 
-    // Runtime to empty
-    if (read_field_from_descriptor(HID_USAGE_PAGE_BATTERY_SYSTEM,
-                                    HID_USAGE_BAT_RUN_TIME_TO_EMPTY, value)) {
-        if (value > 0 && value < 1000000) {
-            data.battery.runtime_minutes = static_cast<float>(value) / 60.0f;
-        }
-        ESP_LOGD(EATON_TAG, "Runtime (descriptor): %d sec = %.1f min", value,
-                 data.battery.runtime_minutes);
-    } else {
-        // Fallback: Report 0x0C bytes 1-2 = runtime in seconds (LE uint16)
-        auto it = report_cache_.find(0x0C);
-        if (it != report_cache_.end() && it->second.size() >= 3) {
-            uint16_t runtime_sec = it->second[1] | (it->second[2] << 8);
-            if (runtime_sec > 0 && runtime_sec < 65535) {
-                data.battery.runtime_minutes = static_cast<float>(runtime_sec) / 60.0f;
+    // Runtime to empty — descriptor path
+    if (std::isnan(data.battery.runtime_minutes)) {
+        if (read_field_from_descriptor(HID_USAGE_PAGE_BATTERY_SYSTEM,
+                                        HID_USAGE_BAT_RUN_TIME_TO_EMPTY, value)) {
+            if (value > 0 && value < 1000000) {
+                data.battery.runtime_minutes = static_cast<float>(value) / 60.0f;
             }
-            ESP_LOGD(EATON_TAG, "Runtime (fallback): %u sec = %.1f min",
-                     runtime_sec, data.battery.runtime_minutes);
+            ESP_LOGD(EATON_TAG, "Runtime (descriptor): %d sec = %.1f min", value,
+                     data.battery.runtime_minutes);
         }
     }
 
@@ -536,8 +557,8 @@ void EatonHidProtocol::parse_voltages(UpsData &data) {
         }
     }
 
-    // Log raw report bytes for voltage-related reports
-    for (uint8_t rid : std::initializer_list<uint8_t>{0x30, 0x31}) {
+    // Log raw report bytes for all reports
+    for (uint8_t rid : available_report_ids_) {
         auto it = report_cache_.find(rid);
         if (it != report_cache_.end()) {
             const auto& d = it->second;
