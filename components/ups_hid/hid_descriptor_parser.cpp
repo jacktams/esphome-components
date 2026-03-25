@@ -226,7 +226,15 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                                 (item_tag == MAIN_OUTPUT) ? 2 : 3;
                 if (rtype == 1) input_items++;
                 if (rtype == 3) feature_items++;
-                bool is_constant = (value & 0x01) != 0; // bit 0 = Constant
+                // HID Main item flags:
+                //   Bit 0: 0=Data, 1=Constant
+                //   Bit 1: 0=Array, 1=Variable
+                // True padding/filler is Constant+Array (e.g. B1 01).
+                // Constant+Variable (e.g. B1 83) means "read-only data" in UPS
+                // devices — these are valid data fields and must NOT be skipped.
+                bool is_variable = (value & 0x02) != 0;
+                bool is_constant_bit = (value & 0x01) != 0;
+                bool is_constant = is_constant_bit && !is_variable; // true padding only
 
                 uint16_t offset_key = (rtype << 8) | gs.report_id;
                 if (bit_offsets.find(offset_key) == bit_offsets.end()) {
