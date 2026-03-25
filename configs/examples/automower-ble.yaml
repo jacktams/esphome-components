@@ -134,6 +134,11 @@ esp32_ble_tracker:
 ble_client:
   - mac_address: XX:XX:XX:XX:XX:XX  # <-- Your mower's MAC address
     id: mower_ble
+    on_passkey_request:
+      then:
+        - ble_client.passkey_reply:
+            id: mower_ble
+            passkey: 0000  # <-- Your mower's PIN
 
 # Keep the bluetooth proxy for other BLE devices
 bluetooth_proxy:

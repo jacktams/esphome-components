@@ -364,8 +364,7 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notify_handle_ = notify_chr->handle;
       ESP_LOGI(TAG, "Notify handle: 0x%04X", this->notify_handle_);
 
-      // Go straight to notification subscribe — if the mower needs
-      // encryption it will request it via SEC_REQ_EVT (handled in gap_event_handler)
+      // Subscribe to notifications first, then initiate pairing during the delay
       this->state_ = ConnectionState::SUBSCRIBING;
       break;
     }
@@ -376,7 +375,16 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         this->state_ = ConnectionState::ERROR;
         return;
       }
-      ESP_LOGI(TAG, "Notifications enabled, waiting 5s before channel setup");
+      ESP_LOGI(TAG, "Notifications enabled, initiating encryption then waiting 5s");
+
+      // Initiate Just Works encryption — the mower needs an encrypted link
+      // before it will respond to protocol writes
+      auto enc_status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+      if (enc_status != ESP_OK) {
+        ESP_LOGW(TAG, "esp_ble_set_encryption returned %d, continuing anyway", enc_status);
+      }
+
+      // Wait 5s for pairing to complete and mower to settle
       this->set_timeout("setup_delay", 5000, [this]() {
         if (this->state_ == ConnectionState::CONNECTED) {
           ESP_LOGI(TAG, "Delay complete, starting channel setup");
@@ -440,13 +448,18 @@ void AutomowerBLE::gap_event_handler(esp_gap_ble_cb_event_t event,
     case ESP_GAP_BLE_AUTH_CMPL_EVT: {
       auto &auth = param->ble_security.auth_cmpl;
       if (auth.success) {
-        ESP_LOGI(TAG, "BLE pairing successful (auth_mode: %d)", auth.auth_mode);
+        ESP_LOGI(TAG, "BLE encryption established (auth_mode: %d)", auth.auth_mode);
       } else {
-        ESP_LOGW(TAG, "BLE pairing event (reason: 0x%X) — continuing without encryption", auth.fail_reason);
-        // Clear stale bond info so it doesn't interfere
+        ESP_LOGW(TAG, "BLE pairing failed (reason: 0x%X), clearing bond and retrying", auth.fail_reason);
         esp_ble_remove_bond_device(auth.bd_addr);
+        // Retry encryption after a short delay (still within our 5s window)
+        this->set_timeout("pairing_retry", 1000, [this]() {
+          if (this->state_ == ConnectionState::CONNECTED) {
+            ESP_LOGI(TAG, "Retrying encryption");
+            esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+          }
+        });
       }
-      // Don't change state — let the normal flow (subscribe → delay → channel setup) continue
       break;
     }
 
