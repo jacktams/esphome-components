@@ -108,6 +108,7 @@ bool EatonHidProtocol::read_descriptor() {
         return false;
     }
 
+    descriptor_size_ = desc_len;
     ESP_LOGI(EATON_TAG, "Read HID report descriptor: %zu bytes", desc_len);
 
     if (!descriptor_parser_.parse(desc_buf, desc_len)) {
@@ -221,11 +222,15 @@ bool EatonHidProtocol::read_data(UpsData &data) {
              success, descriptor_available_ ? "YES" : "NO",
              descriptor_available_ ? descriptor_parser_.get_fields().size() : 0);
 
-    if (first_read_) {
-        log_all_reports();
+    // Log field map for first 5 cycles so it's captured in API logs
+    if (first_read_ < 5) {
+        if (first_read_ == 0) {
+            log_all_reports();
+        }
         if (descriptor_available_) {
-            // Log field map at DEBUG so it appears in API logs
             const auto& fields = descriptor_parser_.get_fields();
+            ESP_LOGD(EATON_TAG, "Descriptor field map (%zu fields, desc_size=%zu):",
+                     fields.size(), descriptor_size_);
             for (const auto& f : fields) {
                 const char* type_str = (f.report_type == 1) ? "In" :
                                        (f.report_type == 2) ? "Out" : "Feat";
@@ -235,7 +240,7 @@ bool EatonHidProtocol::read_data(UpsData &data) {
                          f.parent_collection);
             }
         }
-        first_read_ = false;
+        first_read_++;
     }
 
     parse_power_summary(data);

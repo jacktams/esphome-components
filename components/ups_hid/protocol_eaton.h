@@ -45,8 +45,11 @@ private:
     HidDescriptorParser descriptor_parser_;
     bool descriptor_available_{false};
 
-    // First read flag for extra logging
-    bool first_read_{true};
+    // Read cycle counter for logging (log field map first few cycles)
+    uint8_t first_read_{0};
+
+    // Raw descriptor size for diagnostics
+    size_t descriptor_size_{0};
 
     // Parse specific data from reports
     void parse_power_summary(UpsData &data);
