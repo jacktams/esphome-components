@@ -1,9 +1,8 @@
 #pragma once
 
 #include "ups_hid.h"
-#include "hid_descriptor_parser.h"
 #include <map>
-#include <set>
+#include <vector>
 
 namespace esphome {
 namespace ups_hid {
@@ -19,29 +18,20 @@ public:
     std::string get_protocol_name() const override { return "Eaton HID Protocol"; }
 
 private:
-    HidDescriptorParser parser_;
+    // Read a report and cache it
+    bool read_report(uint8_t report_type, uint8_t report_id, size_t expected_len);
 
-    // Cached report data by report ID
+    // Cached report data
     std::map<uint8_t, std::vector<uint8_t>> report_cache_;
 
-    // Set of feature report IDs we need to read
-    std::set<uint8_t> feature_report_ids_;
+    // Discovered report IDs during init
+    std::vector<uint8_t> available_report_ids_;
 
-    // Read a feature report into cache
-    bool read_feature_report(uint8_t report_id);
-
-    // Extract a value from cached report data using a field descriptor
-    int32_t extract_field_value(const HidField& field) const;
-
-    // Extract a boolean (1-bit) field
-    bool extract_bool_field(const HidField& field) const;
-
-    // Map parsed fields to UpsData
-    void extract_battery_data(UpsData &data);
-    void extract_power_data(UpsData &data);
-    void extract_status_data(UpsData &data);
-    void extract_device_info(UpsData &data);
-    void extract_config_data(UpsData &data);
+    // Parse specific report types
+    void parse_power_summary(UpsData &data);
+    void parse_status(UpsData &data);
+    void parse_voltages(UpsData &data);
+    void read_device_strings(UpsData &data);
 };
 
 // Factory creator function
