@@ -215,7 +215,9 @@ namespace esphome
                              const uint8_t* data, size_t data_len,
                              uint32_t timeout_ms = 1000);
       esp_err_t get_string_descriptor(uint8_t string_index, std::string& result);
-      
+      esp_err_t get_hid_report_descriptor(uint8_t* data, size_t* data_len,
+                                         uint32_t timeout_ms = 1000);
+
       // Transport information
       bool is_connected() const;
       uint16_t get_vendor_id() const; 

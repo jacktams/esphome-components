@@ -278,10 +278,94 @@ esp_err_t Esp32UsbTransport::hid_set_report(uint8_t report_type, uint8_t report_
     return ret;
 }
 
-esp_err_t Esp32UsbTransport::get_string_descriptor(uint8_t string_index, 
+esp_err_t Esp32UsbTransport::get_hid_report_descriptor(uint8_t* data, size_t* data_len,
+                                                      uint32_t timeout_ms) {
+    if (!device_.dev_hdl) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!data || !data_len || *data_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGD(ESP32_USB_TAG, "GET_HID_REPORT_DESCRIPTOR: max_len=%zu, interface=%d", *data_len, device_.interface_num);
+
+    // USB GET_DESCRIPTOR for HID Report Descriptor (type 0x22)
+    const uint8_t bmRequestType = USB_BM_REQUEST_TYPE_DIR_IN |
+                                 USB_BM_REQUEST_TYPE_TYPE_STANDARD |
+                                 USB_BM_REQUEST_TYPE_RECIP_INTERFACE;
+    const uint8_t bRequest = USB_B_REQUEST_GET_DESCRIPTOR;
+    const uint16_t wValue = (0x22 << 8) | 0; // HID Report Descriptor, index 0
+    const uint16_t wIndex = device_.interface_num;
+    const uint16_t wLength = *data_len;
+
+    usb_transfer_t *transfer = nullptr;
+    size_t transfer_size = sizeof(usb_setup_packet_t) + wLength;
+    esp_err_t ret = usb_host_transfer_alloc(transfer_size, 0, &transfer);
+    if (ret != ESP_OK) {
+        ESP_LOGE(ESP32_USB_TAG, "Failed to allocate transfer: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    transfer->device_handle = device_.dev_hdl;
+    transfer->bEndpointAddress = 0;
+    transfer->num_bytes = transfer_size;
+    transfer->timeout_ms = timeout_ms;
+
+    usb_setup_packet_t *setup = (usb_setup_packet_t*)transfer->data_buffer;
+    setup->bmRequestType = bmRequestType;
+    setup->bRequest = bRequest;
+    setup->wValue = wValue;
+    setup->wIndex = wIndex;
+    setup->wLength = wLength;
+
+    SemaphoreHandle_t done_sem = xSemaphoreCreateBinary();
+    if (!done_sem) {
+        usb_host_transfer_free(transfer);
+        return ESP_ERR_NO_MEM;
+    }
+
+    struct {
+        SemaphoreHandle_t sem;
+        esp_err_t result;
+        size_t actual_bytes;
+    } ctx = {done_sem, ESP_ERR_TIMEOUT, 0};
+
+    transfer->context = &ctx;
+    transfer->callback = [](usb_transfer_t *t) {
+        auto *c = static_cast<decltype(ctx)*>(t->context);
+        c->result = (t->status == USB_TRANSFER_STATUS_COMPLETED) ? ESP_OK : ESP_FAIL;
+        c->actual_bytes = t->actual_num_bytes;
+        xSemaphoreGive(c->sem);
+    };
+
+    ret = usb_host_transfer_submit_control(device_.client_hdl, transfer);
+    if (ret == ESP_OK) {
+        if (xSemaphoreTake(done_sem, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {
+            ret = ctx.result;
+            if (ret == ESP_OK && ctx.actual_bytes > sizeof(usb_setup_packet_t)) {
+                size_t desc_len = ctx.actual_bytes - sizeof(usb_setup_packet_t);
+                size_t copy_len = std::min(desc_len, *data_len);
+                memcpy(data, transfer->data_buffer + sizeof(usb_setup_packet_t), copy_len);
+                *data_len = copy_len;
+                ESP_LOGI(ESP32_USB_TAG, "HID report descriptor: %zu bytes", copy_len);
+            } else {
+                *data_len = 0;
+                ret = ESP_FAIL;
+            }
+        } else {
+            ret = ESP_ERR_TIMEOUT;
+        }
+    }
+
+    vSemaphoreDelete(done_sem);
+    usb_host_transfer_free(transfer);
+    return ret;
+}
+
+esp_err_t Esp32UsbTransport::get_string_descriptor(uint8_t string_index,
                                                  std::string& result) {
     result.clear();
-    
+
     if (!device_.dev_hdl) {
         set_last_error("USB device not ready");
         return ESP_ERR_INVALID_STATE;

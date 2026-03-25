@@ -47,6 +47,9 @@ public:
     
     std::string get_last_error() const override;
 
+    esp_err_t get_hid_report_descriptor(uint8_t* data, size_t* data_len,
+                                       uint32_t timeout_ms = 1000) override;
+
 private:
     // USB device structure
     struct UsbDevice {

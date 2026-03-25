@@ -138,6 +138,14 @@ esp_err_t UpsHidComponent::get_string_descriptor(uint8_t string_index, std::stri
   return transport_->get_string_descriptor(string_index, result);
 }
 
+esp_err_t UpsHidComponent::get_hid_report_descriptor(uint8_t* data, size_t* data_len,
+                                                     uint32_t timeout_ms) {
+  if (!transport_) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  return transport_->get_hid_report_descriptor(data, data_len, timeout_ms);
+}
+
 bool UpsHidComponent::is_connected() const {
   return transport_ && transport_->is_connected();
 }
