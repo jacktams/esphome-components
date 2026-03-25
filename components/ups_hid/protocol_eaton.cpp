@@ -218,6 +218,7 @@ bool EatonHidProtocol::read_data(UpsData &data) {
     parse_status(data);
     parse_voltages(data);
     parse_load(data);
+    parse_config(data);
     read_device_strings(data);
 
     return true;
@@ -414,22 +415,63 @@ void EatonHidProtocol::parse_status(UpsData &data) {
             data.power.status = std::string(status::ONLINE) + " - Overload";
         }
     } else {
-        // Fallback: infer from battery level and voltage
-        data.power.status = status::ONLINE;  // default
+        // Fallback: try to interpret status from report 0x16 on Eaton 5P
+        // Report 0x16 contains PresentStatus boolean bits.
+        // Observed: 0x69 = 0b01101001 when online + fully charged.
+        // The exact bit order depends on the HID descriptor. Based on the
+        // observation that 0x69 means "online + fully charged + OK", the
+        // most consistent mapping for Eaton 5P is:
+        //   bit 0: ACPresent (1 = online)
+        //   bit 3: FullyCharged (1 = battery full)
+        //   bit 5: Good (1 = no faults)
+        //   bit 6: Used/Present (1 = UPS active)
+        // Bits 1,2 would be Charging/Discharging (both 0 when fully charged on mains)
+        // NOTE: Without HID descriptor these are educated guesses
+        auto it16 = report_cache_.find(0x16);
+        if (it16 != report_cache_.end() && !it16->second.empty()) {
+            uint8_t s = it16->second[0];
+            bool fb_ac_present     = (s >> 0) & 1;
+            bool fb_charging       = (s >> 1) & 1;
+            bool fb_discharging    = (s >> 2) & 1;
+            bool fb_fully_charged  = (s >> 3) & 1;
+            bool fb_below_capacity = (s >> 4) & 1;
 
-        float battery_level = data.battery.level;
-        bool has_battery_level = !std::isnan(battery_level) && battery_level >= 0;
+            ESP_LOGD(EATON_TAG, "Status bits (fallback 0x16=0x%02X): AC=%d Chrg=%d Dischrg=%d Full=%d Low=%d",
+                     s, fb_ac_present, fb_charging, fb_discharging, fb_fully_charged,
+                     fb_below_capacity);
 
-        if (has_battery_level) {
-            if (battery_level >= 100.0f) {
-                data.battery.status = battery_status::FULLY_CHARGED;
-            } else if (battery_level > 10.0f) {
-                data.battery.status = battery_status::CHARGING;
+            // Power status
+            if (fb_discharging && !fb_ac_present) {
+                data.power.status = status::ON_BATTERY;
             } else {
-                data.battery.status = std::string(battery_status::CHARGING) + " - " + battery_status::LOW;
+                data.power.status = status::ONLINE;
+            }
+
+            // Battery status
+            if (fb_fully_charged) {
+                data.battery.status = battery_status::FULLY_CHARGED;
+            } else if (fb_charging) {
+                data.battery.status = battery_status::CHARGING;
+            } else if (fb_discharging) {
+                data.battery.status = battery_status::DISCHARGING;
+            } else {
+                data.battery.status = battery_status::NORMAL;
+            }
+
+            if (fb_below_capacity) {
+                data.battery.status += std::string(" - ") + battery_status::LOW;
             }
         } else {
-            data.battery.status = battery_status::NORMAL;
+            // Last resort: infer from battery level
+            data.power.status = status::ONLINE;
+            float battery_level = data.battery.level;
+            if (!std::isnan(battery_level) && battery_level >= 100.0f) {
+                data.battery.status = battery_status::FULLY_CHARGED;
+            } else if (!std::isnan(battery_level) && battery_level > 10.0f) {
+                data.battery.status = battery_status::CHARGING;
+            } else {
+                data.battery.status = battery_status::NORMAL;
+            }
         }
     }
 
@@ -588,6 +630,18 @@ void EatonHidProtocol::parse_load(UpsData &data) {
             data.power.load_percent = static_cast<float>(value);
             ESP_LOGD(EATON_TAG, "Load (descriptor): %d%%", value);
         }
+    } else {
+        // Fallback: Report 0x31 byte 0 on Eaton 5P
+        // Per NUT: UPS.PowerSummary.PercentLoad or output flow PercentLoad
+        // Empirical: 0x31 d[0] = 0x02 = 2% (plausible for idle UPS)
+        auto it = report_cache_.find(0x31);
+        if (it != report_cache_.end() && !it->second.empty()) {
+            uint8_t load = it->second[0];
+            if (load <= 100) {
+                data.power.load_percent = static_cast<float>(load);
+                ESP_LOGD(EATON_TAG, "Load (fallback 0x31[0]): %u%%", load);
+            }
+        }
     }
 
     // Try descriptor — ApparentPower / ActivePower for nominal ratings
@@ -604,6 +658,62 @@ void EatonHidProtocol::parse_load(UpsData &data) {
         if (value > 0) {
             data.power.apparent_power_nominal = static_cast<float>(value);
             ESP_LOGD(EATON_TAG, "Apparent power nominal (descriptor): %d VA", value);
+        }
+    }
+}
+
+void EatonHidProtocol::parse_config(UpsData &data) {
+    int32_t value;
+
+    // Delay before shutdown — per NUT: UPS.PowerSummary.DelayBeforeShutdown
+    if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE,
+                                    HID_USAGE_POW_DELAY_BEFORE_SHUTDOWN, value)) {
+        data.config.delay_shutdown = static_cast<int16_t>(value);
+        ESP_LOGD(EATON_TAG, "Delay shutdown (descriptor): %d s", value);
+    }
+
+    // Delay before startup — per NUT: UPS.PowerSummary.DelayBeforeStartup
+    if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE,
+                                    HID_USAGE_POW_DELAY_BEFORE_STARTUP, value)) {
+        data.config.delay_start = static_cast<int16_t>(value);
+        ESP_LOGD(EATON_TAG, "Delay start (descriptor): %d s", value);
+    }
+
+    // Delay before reboot — per NUT: UPS.PowerSummary.DelayBeforeReboot
+    if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE,
+                                    HID_USAGE_POW_DELAY_BEFORE_REBOOT, value)) {
+        data.config.delay_reboot = static_cast<int16_t>(value);
+        ESP_LOGD(EATON_TAG, "Delay reboot (descriptor): %d s", value);
+    }
+
+    // Low battery threshold — per NUT: UPS.PowerSummary.RemainingCapacityLimitSetting
+    // Usage 0x85, 0x008C (BAT_WARNING_CAPACITY_LIMIT)
+    if (read_field_from_descriptor(HID_USAGE_PAGE_BATTERY_SYSTEM,
+                                    HID_USAGE_BAT_WARNING_CAPACITY_LIMIT, value)) {
+        if (value >= 0 && value <= 100) {
+            data.battery.charge_low = static_cast<float>(value);
+            ESP_LOGD(EATON_TAG, "Battery charge low threshold (descriptor): %d%%", value);
+        }
+    }
+
+    // Battery chemistry — per NUT: UPS.PowerSummary.iDeviceChemistry
+    // Usage 0x85, 0x0089 (BAT_I_DEVICE_CHEMISTRY)
+    if (data.battery.type.empty()) {
+        if (read_field_from_descriptor(HID_USAGE_PAGE_BATTERY_SYSTEM,
+                                        HID_USAGE_BAT_I_DEVICE_CHEMISTRY, value)) {
+            // Value is a string descriptor index — read it
+            if (value > 0 && value < 256) {
+                std::string chem_str;
+                if (parent_->get_string_descriptor(static_cast<uint8_t>(value), chem_str) == ESP_OK
+                    && !chem_str.empty()) {
+                    data.battery.type = chem_str;
+                    ESP_LOGD(EATON_TAG, "Battery chemistry (descriptor): %s", chem_str.c_str());
+                }
+            } else if (value >= 1 && value <= 6) {
+                // Direct chemistry ID per HID spec
+                data.battery.type = battery_chemistry::id_to_string(static_cast<uint8_t>(value));
+                ESP_LOGD(EATON_TAG, "Battery chemistry (descriptor ID): %s", data.battery.type.c_str());
+            }
         }
     }
 }

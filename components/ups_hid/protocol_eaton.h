@@ -53,6 +53,7 @@ private:
     void parse_status(UpsData &data);
     void parse_voltages(UpsData &data);
     void parse_load(UpsData &data);
+    void parse_config(UpsData &data);
     void read_device_strings(UpsData &data);
 
     // Debug logging
