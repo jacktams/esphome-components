@@ -160,19 +160,25 @@ void AutomowerBLE::write_data_(const std::vector<uint8_t> &data) {
   }
   ESP_LOGI(TAG, "Writing %d bytes: %s", data.size(), hex.c_str());
 
-  // Send full packet in one write — ESP32 MTU is negotiated (typically 65+)
-  // so no need for application-level fragmentation
-  auto status = esp_ble_gattc_write_char(
-      this->parent()->get_gattc_if(),
-      this->parent()->get_conn_id(),
-      this->write_handle_,
-      data.size(),
-      const_cast<uint8_t *>(data.data()),
-      ESP_GATT_WRITE_TYPE_NO_RSP,
-      ESP_GATT_AUTH_REQ_NONE);
+  // Fragment into 17-byte chunks matching the Python library (MTU 20 - 3 overhead).
+  // The mower firmware expects writes in these chunk sizes.
+  const size_t chunk_size = 17;
+  for (size_t i = 0; i < data.size(); i += chunk_size) {
+    size_t len = std::min(chunk_size, data.size() - i);
+    auto status = esp_ble_gattc_write_char(
+        this->parent()->get_gattc_if(),
+        this->parent()->get_conn_id(),
+        this->write_handle_,
+        len,
+        const_cast<uint8_t *>(data.data() + i),
+        ESP_GATT_WRITE_TYPE_NO_RSP,
+        ESP_GATT_AUTH_REQ_NONE);
 
-  if (status != ESP_OK) {
-    ESP_LOGE(TAG, "Write failed: %d", status);
+    if (status != ESP_OK) {
+      ESP_LOGE(TAG, "Write chunk failed at offset %d: %d", i, status);
+      return;
+    }
+    ESP_LOGD(TAG, "  Wrote chunk: %d bytes at offset %d", len, i);
   }
 }
 
