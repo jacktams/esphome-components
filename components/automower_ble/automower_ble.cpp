@@ -243,6 +243,26 @@ void AutomowerBLE::loop() {
 
   // State machine transitions that need to send data
   switch (this->state_) {
+    case ConnectionState::PAIRING: {
+      ESP_LOGI(TAG, "Requesting BLE encryption (Just Works)");
+      this->state_ = ConnectionState::WAITING_PAIRING;
+      this->command_sent_at_ = millis();
+      auto status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+      if (status != ESP_OK) {
+        ESP_LOGW(TAG, "esp_ble_set_encryption returned %d, trying to subscribe anyway", status);
+        this->state_ = ConnectionState::SUBSCRIBING;
+      }
+      break;
+    }
+
+    case ConnectionState::WAITING_PAIRING:
+      // Timeout after 15s — proceed to subscribe even if pairing didn't complete
+      if (millis() - this->command_sent_at_ > 15000) {
+        ESP_LOGW(TAG, "Pairing timeout, subscribing anyway");
+        this->state_ = ConnectionState::SUBSCRIBING;
+      }
+      break;
+
     case ConnectionState::SUBSCRIBING:
       // Move to CONNECTED first to prevent re-entry; subscribe_notifications_
       // may overwrite to ERROR if it fails
@@ -364,8 +384,10 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notify_handle_ = notify_chr->handle;
       ESP_LOGI(TAG, "Notify handle: 0x%04X", this->notify_handle_);
 
-      // Subscribe to notifications first, then initiate pairing during the delay
-      this->state_ = ConnectionState::SUBSCRIBING;
+      // Encrypt FIRST, then subscribe — the CCCD write for notifications
+      // may require an encrypted link on this mower
+      ESP_LOGI(TAG, "Initiating BLE encryption before subscribing");
+      this->state_ = ConnectionState::PAIRING;
       break;
     }
 
@@ -375,16 +397,9 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         this->state_ = ConnectionState::ERROR;
         return;
       }
-      ESP_LOGI(TAG, "Notifications enabled, initiating encryption then waiting 5s");
+      ESP_LOGI(TAG, "Notifications enabled on encrypted link, waiting 5s");
 
-      // Initiate Just Works encryption — the mower needs an encrypted link
-      // before it will respond to protocol writes
-      auto enc_status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
-      if (enc_status != ESP_OK) {
-        ESP_LOGW(TAG, "esp_ble_set_encryption returned %d, continuing anyway", enc_status);
-      }
-
-      // Wait 5s for pairing to complete and mower to settle
+      // Wait 5s for the mower to settle before protocol handshake
       this->set_timeout("setup_delay", 5000, [this]() {
         if (this->state_ == ConnectionState::CONNECTED) {
           ESP_LOGI(TAG, "Delay complete, starting channel setup");
@@ -449,16 +464,22 @@ void AutomowerBLE::gap_event_handler(esp_gap_ble_cb_event_t event,
       auto &auth = param->ble_security.auth_cmpl;
       if (auth.success) {
         ESP_LOGI(TAG, "BLE encryption established (auth_mode: %d)", auth.auth_mode);
+        // Now that the link is encrypted, subscribe to notifications
+        if (this->state_ == ConnectionState::WAITING_PAIRING) {
+          this->state_ = ConnectionState::SUBSCRIBING;
+        }
       } else {
         ESP_LOGW(TAG, "BLE pairing failed (reason: 0x%X), clearing bond and retrying", auth.fail_reason);
         esp_ble_remove_bond_device(auth.bd_addr);
-        // Retry encryption after a short delay (still within our 5s window)
-        this->set_timeout("pairing_retry", 1000, [this]() {
-          if (this->state_ == ConnectionState::CONNECTED) {
-            ESP_LOGI(TAG, "Retrying encryption");
-            esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
-          }
-        });
+        // Retry after a short delay
+        if (this->state_ == ConnectionState::WAITING_PAIRING) {
+          this->set_timeout("pairing_retry", 2000, [this]() {
+            if (this->state_ == ConnectionState::WAITING_PAIRING) {
+              ESP_LOGI(TAG, "Retrying encryption");
+              esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+            }
+          });
+        }
       }
       break;
     }
