@@ -397,11 +397,8 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
         this->state_ = ConnectionState::ERROR;
         return;
       }
-      ESP_LOGI(TAG, "Notifications enabled, starting protocol handshake");
-      // Small delay before sending setup (the Python code waits 5s)
-      this->set_timeout("setup_delay", 2000, [this]() {
-        this->state_ = ConnectionState::SETUP_CHANNEL;
-      });
+      ESP_LOGI(TAG, "Notifications enabled, sending channel setup immediately");
+      this->state_ = ConnectionState::SETUP_CHANNEL;
       break;
     }
 
@@ -465,7 +462,10 @@ void AutomowerBLE::gap_event_handler(esp_gap_ble_cb_event_t event,
         }
       } else {
         ESP_LOGE(TAG, "BLE pairing FAILED (reason: 0x%X)", auth.fail_reason);
-        this->state_ = ConnectionState::ERROR;
+        // Clear stale bond info so next attempt starts fresh
+        esp_ble_remove_bond_device(auth.bd_addr);
+        ESP_LOGW(TAG, "Removed stale bond, will retry on reconnect");
+        // Don't set ERROR — let ble_client reconnect and retry pairing
       }
       break;
     }
