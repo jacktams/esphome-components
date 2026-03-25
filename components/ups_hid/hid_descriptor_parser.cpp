@@ -248,6 +248,19 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     usages = prev_usages;
                 }
 
+                // HID Power Device pattern: each data field is wrapped in a
+                // Logical Collection whose usage identifies the field (e.g.
+                // Collection(Voltage) contains Feature+Input with no local usage).
+                // Use the parent collection's usage when no other usage is available.
+                if (usages.empty() && !is_constant && !collection_stack.empty()) {
+                    uint16_t parent_usage = collection_stack.back();
+                    if (parent_usage != 0) {
+                        for (uint32_t i = 0; i < gs.report_count; i++) {
+                            usages.push_back(parent_usage);
+                        }
+                    }
+                }
+
                 // Emit one HidField per usage (or per report_count if no usages)
                 uint16_t parent = collection_stack.empty() ? 0 : collection_stack.back();
                 for (uint32_t i = 0; i < gs.report_count; i++) {

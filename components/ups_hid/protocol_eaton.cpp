@@ -231,43 +231,33 @@ bool EatonHidProtocol::read_data(UpsData &data) {
              success, descriptor_available_ ? "YES" : "NO",
              descriptor_available_ ? descriptor_parser_.get_fields().size() : 0);
 
-    // Log diagnostics for first 3 cycles so it's captured in API logs
-    if (first_read_ < 3) {
-        if (first_read_ == 0) {
-            log_all_reports();
-            // Dump raw descriptor hex (logged here because init logs are missed)
-            if (descriptor_available_ && !descriptor_parser_.raw_descriptor.empty()) {
-                const auto& raw = descriptor_parser_.raw_descriptor;
-                ESP_LOGD(EATON_TAG, "Raw HID descriptor: %zu bytes", raw.size());
-                for (size_t offset = 0; offset < raw.size(); offset += 32) {
-                    std::string hex;
-                    for (size_t i = offset; i < std::min(raw.size(), offset + 32); i++) {
-                        char buf[4];
-                        snprintf(buf, sizeof(buf), "%02X ", raw[i]);
-                        hex += buf;
-                    }
-                    ESP_LOGD(EATON_TAG, "  @%04zu: %s", offset, hex.c_str());
+    // Dump raw descriptor across multiple cycles to avoid log buffer overflow
+    // Each cycle dumps ~256 bytes (8 lines of 32 bytes)
+    if (descriptor_available_ && !descriptor_parser_.raw_descriptor.empty()) {
+        const auto& raw = descriptor_parser_.raw_descriptor;
+        size_t chunk_size = 256;
+        size_t chunk_start = first_read_ * chunk_size;
+        size_t total_chunks = (raw.size() + chunk_size - 1) / chunk_size;
+
+        if (first_read_ < total_chunks) {
+            if (first_read_ == 0) {
+                ESP_LOGD(EATON_TAG, "=== Raw HID descriptor: %zu bytes ===", raw.size());
+            }
+            size_t chunk_end = std::min(raw.size(), chunk_start + chunk_size);
+            for (size_t offset = chunk_start; offset < chunk_end; offset += 32) {
+                std::string hex;
+                for (size_t i = offset; i < std::min(chunk_end, offset + 32); i++) {
+                    char buf[4];
+                    snprintf(buf, sizeof(buf), "%02X ", raw[i]);
+                    hex += buf;
                 }
+                ESP_LOGD(EATON_TAG, "  @%04zu: %s", offset, hex.c_str());
             }
-        }
-        if (descriptor_available_) {
-            const auto& fields = descriptor_parser_.get_fields();
-            ESP_LOGD(EATON_TAG, "Descriptor: %zu fields, %zu bytes "
-                     "(items=%u main=%u in=%u feat=%u const_skip=%u zero_skip=%u)",
-                     fields.size(), descriptor_size_,
-                     descriptor_parser_.total_items, descriptor_parser_.main_items,
-                     descriptor_parser_.input_items, descriptor_parser_.feature_items,
-                     descriptor_parser_.constant_skipped, descriptor_parser_.zero_usage_skipped);
-            for (const auto& f : fields) {
-                const char* type_str = (f.report_type == 1) ? "In" :
-                                       (f.report_type == 2) ? "Out" : "Feat";
-                ESP_LOGD(EATON_TAG, "  %s 0x%02X: P=0x%04X U=0x%04X @%u/%u [%d,%d] C=0x%04X",
-                         type_str, f.report_id, f.usage_page, f.usage_id,
-                         f.bit_offset, f.bit_size, f.logical_min, f.logical_max,
-                         f.parent_collection);
+            if (first_read_ + 1 == total_chunks) {
+                ESP_LOGD(EATON_TAG, "=== End descriptor ===");
             }
+            first_read_++;
         }
-        first_read_++;
     }
 
     parse_power_summary(data);
