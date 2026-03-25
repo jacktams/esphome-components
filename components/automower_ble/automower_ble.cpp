@@ -183,6 +183,7 @@ void AutomowerBLE::subscribe_notifications_() {
     return;
   }
 
+  // Register local notification callback
   auto status = esp_ble_gattc_register_for_notify(
       this->parent()->get_gattc_if(),
       this->parent()->get_remote_bda(),
@@ -191,6 +192,28 @@ void AutomowerBLE::subscribe_notifications_() {
   if (status != ESP_OK) {
     ESP_LOGE(TAG, "Register for notify failed: %d", status);
     this->state_ = ConnectionState::ERROR;
+    return;
+  }
+
+  // Explicitly write the CCCD descriptor to enable notifications on the REMOTE device.
+  // esp_ble_gattc_register_for_notify() only registers the local callback —
+  // without this write, the mower doesn't know to send notifications.
+  // CCCD handle is typically notify_handle + 1 (standard BLE layout).
+  uint16_t cccd_handle = this->notify_handle_ + 1;
+  uint8_t cccd_value[2] = {0x01, 0x00};  // 0x0001 = notifications enabled
+  auto cccd_status = esp_ble_gattc_write_char_descr(
+      this->parent()->get_gattc_if(),
+      this->parent()->get_conn_id(),
+      cccd_handle,
+      sizeof(cccd_value),
+      cccd_value,
+      ESP_GATT_WRITE_TYPE_RSP,
+      ESP_GATT_AUTH_REQ_NONE);
+
+  if (cccd_status != ESP_OK) {
+    ESP_LOGE(TAG, "CCCD write failed: %d", cccd_status);
+  } else {
+    ESP_LOGI(TAG, "CCCD write sent to handle 0x%04X", cccd_handle);
   }
 }
 
@@ -402,8 +425,19 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notify_handle_ = notify_chr->handle;
       ESP_LOGI(TAG, "Notify handle: 0x%04X", this->notify_handle_);
 
+      // Probe readable characteristics (the Python code reads all chars before subscribing)
+      auto device_uuid = esp32_ble_tracker::ESPBTUUID::from_raw(
+          std::string("98bd0004-0b0e-421a-84e5-ddbf75dc6de4"));
+      auto *device_chr = this->parent()->get_characteristic(service_uuid, device_uuid);
+      if (device_chr != nullptr) {
+        ESP_LOGI(TAG, "Reading device type characteristic (98bd0004)");
+        esp_ble_gattc_read_char(this->parent()->get_gattc_if(),
+                                 this->parent()->get_conn_id(),
+                                 device_chr->handle, ESP_GATT_AUTH_REQ_NONE);
+      }
+
       // Encrypt FIRST, then subscribe — the CCCD write for notifications
-      // may require an encrypted link on this mower
+      // requires an encrypted link on this mower
       ESP_LOGI(TAG, "Initiating BLE encryption before subscribing");
       this->state_ = ConnectionState::PAIRING;
       break;
