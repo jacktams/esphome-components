@@ -3,8 +3,9 @@ import esphome.config_validation as cv
 from esphome.components import binary_sensor
 from esphome.const import (
     CONF_TYPE,
-    DEVICE_CLASS_CONNECTIVITY,
     DEVICE_CLASS_BATTERY,
+    DEVICE_CLASS_BATTERY_CHARGING,
+    DEVICE_CLASS_CONNECTIVITY,
     DEVICE_CLASS_PROBLEM,
     DEVICE_CLASS_POWER,
 )
@@ -34,7 +35,7 @@ BINARY_SENSOR_TYPES = {
         "device_class": DEVICE_CLASS_POWER,
     },
     "charging": {
-        "device_class": DEVICE_CLASS_BATTERY,
+        "device_class": DEVICE_CLASS_BATTERY_CHARGING,
     },
 }
 
