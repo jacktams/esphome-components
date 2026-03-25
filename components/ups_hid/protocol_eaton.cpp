@@ -236,49 +236,47 @@ void EatonHidProtocol::parse_power_summary(UpsData &data) {
     } else {
         // Fallback: Report 0x0C on Eaton 5P
         // Empirical layout (4 data bytes after report ID strip):
-        //   d[0..1] = RunTimeToEmpty in seconds (LE uint16)
+        //   d[0..1] = unknown time field (not RunTimeToEmpty)
         //   d[2]    = RemainingCapacity (battery %)
-        //   d[3]    = flags/padding
+        //   d[3]    = FullChargeCapacity or duplicate (also 100 when full)
         auto it = report_cache_.find(0x0C);
         if (it != report_cache_.end()) {
             const auto& d = it->second;
-            // Log all bytes for diagnostics
-            std::string hex;
-            for (size_t i = 0; i < d.size(); i++) {
-                char buf[4]; snprintf(buf, sizeof(buf), "%02X ", d[i]); hex += buf;
-            }
-            ESP_LOGD(EATON_TAG, "Report 0x0C [%zu]: %s", d.size(), hex.c_str());
-
             // Battery percentage at byte 2
             if (d.size() >= 3) {
                 uint8_t battery_pct = d[2];
                 if (battery_pct <= 100) {
                     data.battery.level = static_cast<float>(battery_pct);
                 }
-                ESP_LOGD(EATON_TAG, "Battery level (fallback d[2]): %u%%", battery_pct);
-            }
-
-            // Runtime at bytes 0-1 in seconds (LE uint16)
-            if (d.size() >= 2) {
-                uint16_t runtime_sec = d[0] | (d[1] << 8);
-                if (runtime_sec > 0 && runtime_sec < 65535) {
-                    data.battery.runtime_minutes = static_cast<float>(runtime_sec) / 60.0f;
-                }
-                ESP_LOGD(EATON_TAG, "Runtime (fallback d[0:1]): %u sec = %.1f min",
-                         runtime_sec, data.battery.runtime_minutes);
+                ESP_LOGD(EATON_TAG, "Battery level (fallback 0x0C[2]): %u%%", battery_pct);
             }
         }
     }
 
-    // Runtime to empty — descriptor path
-    if (std::isnan(data.battery.runtime_minutes)) {
-        if (read_field_from_descriptor(HID_USAGE_PAGE_BATTERY_SYSTEM,
-                                        HID_USAGE_BAT_RUN_TIME_TO_EMPTY, value)) {
-            if (value > 0 && value < 1000000) {
-                data.battery.runtime_minutes = static_cast<float>(value) / 60.0f;
+    // Runtime to empty — try descriptor first
+    if (read_field_from_descriptor(HID_USAGE_PAGE_BATTERY_SYSTEM,
+                                    HID_USAGE_BAT_RUN_TIME_TO_EMPTY, value)) {
+        if (value > 0 && value < 1000000) {
+            data.battery.runtime_minutes = static_cast<float>(value) / 60.0f;
+        }
+        ESP_LOGD(EATON_TAG, "Runtime (descriptor): %d sec = %.1f min", value,
+                 data.battery.runtime_minutes);
+    } else {
+        // Fallback: Report 0x06 on Eaton 5P
+        // Empirical layout (5 data bytes after report ID strip):
+        //   d[0]    = RemainingCapacity (battery %, duplicate)
+        //   d[1..2] = RunTimeToEmpty in seconds (LE uint16)
+        //   d[3..4] = unknown (zeros)
+        // Verified: d[1..2] = 0x1838 = 6200 sec = 103.3 min matches device display of 103 min
+        auto it06 = report_cache_.find(0x06);
+        if (it06 != report_cache_.end() && it06->second.size() >= 3) {
+            const auto& d = it06->second;
+            uint16_t runtime_sec = d[1] | (d[2] << 8);
+            if (runtime_sec > 0 && runtime_sec < 65535) {
+                data.battery.runtime_minutes = static_cast<float>(runtime_sec) / 60.0f;
             }
-            ESP_LOGD(EATON_TAG, "Runtime (descriptor): %d sec = %.1f min", value,
-                     data.battery.runtime_minutes);
+            ESP_LOGD(EATON_TAG, "Runtime (fallback 0x06[1:2]): %u sec = %.1f min",
+                     runtime_sec, data.battery.runtime_minutes);
         }
     }
 
