@@ -85,6 +85,7 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
 
     // Local state (reset after each Main item)
     std::vector<uint16_t> usages;
+    std::vector<uint16_t> prev_usages;  // saved from previous Main item
     uint16_t usage_min = 0;
     uint16_t usage_max = 0;
 
@@ -205,8 +206,9 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                 } else {
                     collection_stack.push_back(0);
                 }
-                // Clear local state
+                // Clear local state (including prev_usages — new collection scope)
                 usages.clear();
+                prev_usages.clear();
                 usage_min = usage_max = 0;
                 break;
 
@@ -236,6 +238,13 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     for (uint16_t u = usage_min; u <= usage_max && usages.size() < gs.report_count; u++) {
                         usages.push_back(u);
                     }
+                }
+
+                // Eaton/MGE pattern: Feature + Input items back-to-back for
+                // the same field. The first Main item consumes the usages, the
+                // second has none. Reuse the previous usages when current has none.
+                if (usages.empty() && !prev_usages.empty() && !is_constant) {
+                    usages = prev_usages;
                 }
 
                 // Emit one HidField per usage (or per report_count if no usages)
@@ -272,7 +281,10 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
                     report_max_bits_[max_key] = total;
                 }
 
-                // Clear local state
+                // Save usages for potential reuse by next Main item
+                // (Eaton Feature+Input pairs share the same usage),
+                // then clear local state per HID spec
+                prev_usages = usages;
                 usages.clear();
                 usage_min = usage_max = 0;
                 break;
