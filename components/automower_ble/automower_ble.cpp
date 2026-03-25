@@ -200,12 +200,16 @@ void AutomowerBLE::setup() {
   this->channel_id_ = esp_random();
   ESP_LOGI(TAG, "Channel ID: 0x%08X", this->channel_id_);
 
-  // Configure BLE security for pairing (Just Works mode)
-  esp_ble_auth_req_t auth_req = ESP_LE_AUTH_BOND;
-  esp_ble_io_cap_t io_cap = ESP_IO_CAP_NONE;
+  // Configure BLE security for PIN-based MITM pairing
+  esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
+  esp_ble_io_cap_t io_cap = ESP_IO_CAP_OUT;  // "Display" capability — provides static passkey
   uint8_t key_size = 16;
   uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
   uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+
+  // Set the PIN as a static passkey for BLE pairing
+  uint32_t passkey = this->pin_;
+  esp_ble_gap_set_security_param(ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(passkey));
 
   esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
   esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &io_cap, sizeof(io_cap));
@@ -213,7 +217,7 @@ void AutomowerBLE::setup() {
   esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
   esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(rsp_key));
 
-  ESP_LOGI(TAG, "BLE security parameters configured (Just Works bonding)");
+  ESP_LOGI(TAG, "BLE security configured (MITM + Bond, PIN: %lu)", passkey);
 }
 
 void AutomowerBLE::dump_config() {
@@ -244,10 +248,10 @@ void AutomowerBLE::loop() {
   // State machine transitions that need to send data
   switch (this->state_) {
     case ConnectionState::PAIRING: {
-      ESP_LOGI(TAG, "Requesting BLE encryption (Just Works)");
+      ESP_LOGI(TAG, "Requesting BLE encryption (MITM with PIN)");
       this->state_ = ConnectionState::WAITING_PAIRING;
       this->command_sent_at_ = millis();
-      auto status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+      auto status = esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
       if (status != ESP_OK) {
         ESP_LOGW(TAG, "esp_ble_set_encryption returned %d, trying to subscribe anyway", status);
         this->state_ = ConnectionState::SUBSCRIBING;
@@ -476,7 +480,7 @@ void AutomowerBLE::gap_event_handler(esp_gap_ble_cb_event_t event,
           this->set_timeout("pairing_retry", 2000, [this]() {
             if (this->state_ == ConnectionState::WAITING_PAIRING) {
               ESP_LOGI(TAG, "Retrying encryption");
-              esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+              esp_ble_set_encryption(this->parent()->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
             }
           });
         }
