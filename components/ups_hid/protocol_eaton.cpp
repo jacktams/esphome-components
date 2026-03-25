@@ -203,10 +203,11 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
-    // Log descriptor status and all report hex dumps so diagnostics are visible
-    // even when init logs were missed (API connects after boot)
+    // Always log descriptor status so it's visible even when init was missed
+    ESP_LOGD(EATON_TAG, "Parsing %d reports (descriptor: %s)",
+             success, descriptor_available_ ? "YES" : "NO");
+
     if (first_read_) {
-        ESP_LOGI(EATON_TAG, "Descriptor available: %s", descriptor_available_ ? "YES" : "NO");
         log_all_reports();
         if (descriptor_available_) {
             log_descriptor_fields();
@@ -235,11 +236,11 @@ void EatonHidProtocol::parse_power_summary(UpsData &data) {
         }
         ESP_LOGD(EATON_TAG, "Battery level (descriptor): %d%%", value);
     } else {
-        // Fallback: Report 0x0C on Eaton 5P
+        // Fallback: Report 0x0C (PowerSummary) on Eaton 5P
         // Empirical layout (4 data bytes after report ID strip):
-        //   d[0..1] = unknown time field (not RunTimeToEmpty)
+        //   d[0..1] = Voltage in decivolts (battery voltage, e.g. 513 = 51.3V)
         //   d[2]    = RemainingCapacity (battery %)
-        //   d[3]    = FullChargeCapacity or duplicate (also 100 when full)
+        //   d[3]    = FullChargeCapacity (usually 100%)
         auto it = report_cache_.find(0x0C);
         if (it != report_cache_.end()) {
             const auto& d = it->second;
@@ -294,12 +295,26 @@ void EatonHidProtocol::parse_power_summary(UpsData &data) {
     } else if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE,
                                            HID_USAGE_POW_VOLTAGE, value,
                                            1, HID_USAGE_POW_POWER_SUMMARY)) {
-        // Some descriptors put battery voltage under PowerSummary
         float voltage = static_cast<float>(value);
         if (voltage > 1000) voltage /= 10.0f;
         if (voltage > 0 && voltage < 60.0f) {
             data.battery.voltage = voltage;
             ESP_LOGD(EATON_TAG, "Battery voltage (descriptor/PowerSummary): %.1f V", voltage);
+        }
+    } else {
+        // Fallback: Report 0x0C bytes 0-1 on Eaton 5P
+        // Per NUT: UPS.PowerSummary.Voltage = battery voltage
+        // Empirical: d[0..1] = 0x0201 = 513 decivolts = 51.3V
+        // (Eaton 5P 1150VA: 4x12V = 48V nominal, ~51V at full charge)
+        auto it = report_cache_.find(0x0C);
+        if (it != report_cache_.end() && it->second.size() >= 2) {
+            uint16_t raw16 = it->second[0] | (it->second[1] << 8);
+            float voltage = static_cast<float>(raw16) / 10.0f;  // decivolts
+            if (voltage > 0 && voltage < 60.0f) {
+                data.battery.voltage = voltage;
+            }
+            ESP_LOGD(EATON_TAG, "Battery voltage (fallback 0x0C[0:1]): raw=%u, %.1f V",
+                     raw16, voltage);
         }
     }
 
