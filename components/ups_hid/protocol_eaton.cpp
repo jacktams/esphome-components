@@ -436,8 +436,10 @@ void EatonHidProtocol::parse_status(UpsData &data) {
     }
 
     if (have_status_bits) {
-        // Determine power status from descriptor bits
-        if (discharging && !ac_present) {
+        // Determine power status — Discharging is the definitive on-battery indicator.
+        // Eaton keeps ACPresent=1 even during battery operation (it means "AC input wired"
+        // not "AC power live"), so we don't rely on ACPresent for this decision.
+        if (discharging) {
             data.power.status = status::ON_BATTERY;
         } else {
             data.power.status = status::ONLINE;
@@ -446,10 +448,10 @@ void EatonHidProtocol::parse_status(UpsData &data) {
         // Determine battery status
         if (fully_charged) {
             data.battery.status = battery_status::FULLY_CHARGED;
-        } else if (charging) {
-            data.battery.status = battery_status::CHARGING;
         } else if (discharging) {
             data.battery.status = battery_status::DISCHARGING;
+        } else if (charging) {
+            data.battery.status = battery_status::CHARGING;
         } else {
             data.battery.status = battery_status::NORMAL;
         }
@@ -486,8 +488,8 @@ void EatonHidProtocol::parse_status(UpsData &data) {
                      s, fb_ac_present, fb_charging, fb_discharging, fb_fully_charged,
                      fb_below_capacity);
 
-            // Power status
-            if (fb_discharging && !fb_ac_present) {
+            // Power status — Discharging is definitive
+            if (fb_discharging) {
                 data.power.status = status::ON_BATTERY;
             } else {
                 data.power.status = status::ONLINE;
@@ -496,10 +498,10 @@ void EatonHidProtocol::parse_status(UpsData &data) {
             // Battery status
             if (fb_fully_charged) {
                 data.battery.status = battery_status::FULLY_CHARGED;
-            } else if (fb_charging) {
-                data.battery.status = battery_status::CHARGING;
             } else if (fb_discharging) {
                 data.battery.status = battery_status::DISCHARGING;
+            } else if (fb_charging) {
+                data.battery.status = battery_status::CHARGING;
             } else {
                 data.battery.status = battery_status::NORMAL;
             }
