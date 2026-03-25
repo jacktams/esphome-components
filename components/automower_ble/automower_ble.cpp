@@ -462,6 +462,33 @@ void AutomowerBLE::gattc_event_handler(esp_gattc_cb_event_t event,
       break;
     }
 
+    case ESP_GATTC_READ_CHAR_EVT: {
+      if (param->read.status == ESP_GATT_OK) {
+        std::string hex;
+        for (uint16_t i = 0; i < param->read.value_len && i < 32; i++) {
+          char buf[4];
+          snprintf(buf, sizeof(buf), "%02X ", param->read.value[i]);
+          hex += buf;
+        }
+        ESP_LOGI(TAG, "Characteristic read (handle 0x%04X): %d bytes: %s",
+                 param->read.handle, param->read.value_len, hex.c_str());
+      } else {
+        ESP_LOGW(TAG, "Characteristic read failed (handle 0x%04X, status: %d)",
+                 param->read.handle, param->read.status);
+      }
+      break;
+    }
+
+    case ESP_GATTC_WRITE_DESCR_EVT: {
+      if (param->write.status == ESP_GATT_OK) {
+        ESP_LOGI(TAG, "CCCD descriptor write confirmed (handle 0x%04X)", param->write.handle);
+      } else {
+        ESP_LOGE(TAG, "CCCD descriptor write FAILED (handle 0x%04X, status: %d)",
+                 param->write.handle, param->write.status);
+      }
+      break;
+    }
+
     case ESP_GATTC_NOTIFY_EVT: {
       if (param->notify.handle != this->notify_handle_)
         break;
