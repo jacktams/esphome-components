@@ -25,16 +25,7 @@ bool EatonHidProtocol::detect() {
         return false;
     }
 
-    // Try reading the HID report descriptor to confirm this is a HID device
-    uint8_t desc_buf[2048];
-    size_t desc_len = sizeof(desc_buf);
-    esp_err_t ret = parent_->get_hid_report_descriptor(desc_buf, &desc_len);
-    if (ret != ESP_OK || desc_len == 0) {
-        ESP_LOGW(EATON_TAG, "Failed to read HID report descriptor: %s", esp_err_to_name(ret));
-        return false;
-    }
-
-    ESP_LOGI(EATON_TAG, "Eaton/MGE device detected (VID=0x%04X), descriptor=%zu bytes", vid, desc_len);
+    ESP_LOGI(EATON_TAG, "Eaton/MGE device detected (VID=0x%04X)", vid);
     return true;
 }
 
