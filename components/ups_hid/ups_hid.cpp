@@ -686,14 +686,12 @@ void UpsHidComponent::set_fast_polling_mode(bool enable) {
 // Convenient state getters for lambda expressions (no sensor entities required)
 bool UpsHidComponent::is_online() const {
   std::lock_guard<std::mutex> lock(data_mutex_);
-  // UPS is online when input voltage is valid (same logic as binary sensor update)
-  return ups_data_.power.input_voltage_valid();
+  return ups_data_.power.status == status::ONLINE;
 }
 
 bool UpsHidComponent::is_on_battery() const {
   std::lock_guard<std::mutex> lock(data_mutex_);
-  // UPS is on battery when NOT online (opposite of online state)
-  return !ups_data_.power.input_voltage_valid();
+  return ups_data_.power.status == status::ON_BATTERY;
 }
 
 bool UpsHidComponent::is_low_battery() const {
@@ -704,11 +702,7 @@ bool UpsHidComponent::is_low_battery() const {
 
 bool UpsHidComponent::is_charging() const {
   std::lock_guard<std::mutex> lock(data_mutex_);
-  // Charging when online AND battery level is not 100%
-  return ups_data_.power.input_voltage_valid() && 
-         ups_data_.battery.is_valid() && 
-         !std::isnan(ups_data_.battery.level) && 
-         ups_data_.battery.level < 100.0f;
+  return ups_data_.battery.status.find(battery_status::CHARGING) != std::string::npos;
 }
 
 bool UpsHidComponent::has_fault() const {
