@@ -122,7 +122,7 @@ CONFIG_SCHEMA = cv.All(
             ): validate_protocol_timeout,
             # Protocol selection: auto (default), apc, cyberpower, generic
             cv.Optional(CONF_PROTOCOL, default="auto"): cv.one_of(
-                "auto", "apc", "cyberpower", "generic", lower=True
+                "auto", "apc", "cyberpower", "eaton", "generic", lower=True
             ),
             # Fallback nominal voltage (European 230V default for international compatibility)
             cv.Optional(CONF_FALLBACK_NOMINAL_VOLTAGE, default="230V"): validate_fallback_nominal_voltage,
