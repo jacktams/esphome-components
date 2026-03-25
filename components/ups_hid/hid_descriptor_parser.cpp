@@ -97,9 +97,6 @@ bool HidDescriptorParser::parse(const uint8_t* data, size_t len) {
 
 
 
-    // Reset parse counters
-    total_items = main_items = input_items = feature_items = 0;
-    constant_skipped = zero_usage_skipped = 0;
     uint32_t fields_added = 0;
 
     size_t pos = 0;
