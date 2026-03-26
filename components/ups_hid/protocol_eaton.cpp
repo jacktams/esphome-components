@@ -83,13 +83,13 @@ bool EatonHidProtocol::initialize() {
         return false;
     }
 
-    // Read device strings (indices 1-3 standard, 4+ may have firmware)
+    // Read device strings (only 1-3 standard — 4+ often timeout on Eaton)
     std::string str;
-    for (uint8_t idx = 1; idx <= 5; idx++) {
-        if (parent_->get_string_descriptor(idx, str) == ESP_OK && !str.empty()) {
-            ESP_LOGI(EATON_TAG, "String descriptor %u: %s", idx, str.c_str());
-        }
-        vTaskDelay(pdMS_TO_TICKS(20));
+    if (parent_->get_string_descriptor(1, str) == ESP_OK && !str.empty()) {
+        ESP_LOGI(EATON_TAG, "Manufacturer: %s", str.c_str());
+    }
+    if (parent_->get_string_descriptor(2, str) == ESP_OK && !str.empty()) {
+        ESP_LOGI(EATON_TAG, "Product: %s", str.c_str());
     }
 
     ESP_LOGI(EATON_TAG, "Eaton HID protocol initialized (descriptor: %s)",
@@ -696,6 +696,10 @@ void EatonHidProtocol::parse_load(UpsData &data) {
 }
 
 void EatonHidProtocol::parse_config(UpsData &data) {
+    // Config data is static — only read once
+    if (config_read_) return;
+    config_read_ = true;
+
     int32_t value;
 
     // Delay before shutdown — per NUT: UPS.PowerSummary.DelayBeforeShutdown
@@ -752,6 +756,11 @@ void EatonHidProtocol::parse_config(UpsData &data) {
 }
 
 void EatonHidProtocol::read_device_strings(UpsData &data) {
+    // Only read strings once — they never change and each USB transfer blocks ~50ms
+    if (strings_read_) {
+        return;
+    }
+
     std::string str;
     if (data.device.manufacturer.empty()) {
         if (parent_->get_string_descriptor(1, str) == ESP_OK && !str.empty()) {
@@ -768,31 +777,9 @@ void EatonHidProtocol::read_device_strings(UpsData &data) {
             data.device.serial_number = str;
         }
     }
-    // Try string descriptors 4-5 for firmware version (Eaton sometimes puts it there)
-    if (data.device.firmware_version.empty()) {
-        for (uint8_t idx = 4; idx <= 5; idx++) {
-            if (parent_->get_string_descriptor(idx, str) == ESP_OK && !str.empty()) {
-                data.device.firmware_version = str;
-                break;
-            }
-        }
-    }
-    // Try descriptor for firmware string index (iProduct variant)
-    if (data.device.firmware_version.empty() && descriptor_available_) {
-        int32_t value;
-        // Usage 0x84:0x00FD = iManufacturer, 0x84:0x00FE = iProduct, 0x84:0x00FF = iSerialNumber
-        // Some devices put firmware in vendor-specific string indices
-        if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE, 0x00FE, value)) {
-            if (value > 0 && value < 256) {
-                if (parent_->get_string_descriptor(static_cast<uint8_t>(value), str) == ESP_OK
-                    && !str.empty() && str != data.device.model) {
-                    data.device.firmware_version = str;
-                }
-            }
-        }
-    }
     data.device.usb_vendor_id = parent_->get_vendor_id();
     data.device.usb_product_id = parent_->get_product_id();
+    strings_read_ = true;
 }
 
 void EatonHidProtocol::log_all_reports() {
