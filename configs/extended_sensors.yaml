@@ -75,35 +75,35 @@ sensor:
   #   state_class: measurement
   #   accuracy_decimals: 0
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Delay Shutdown"
-    id: ups_delay_shutdown
-    type: ups_delay_shutdown
-    unit_of_measurement: "s"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Delay Shutdown"
+  #   id: ups_delay_shutdown
+  #   type: ups_delay_shutdown
+  #   unit_of_measurement: "s"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Delay Start"
-    id: ups_delay_start
-    type: ups_delay_start
-    unit_of_measurement: "s"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Delay Start"
+  #   id: ups_delay_start
+  #   type: ups_delay_start
+  #   unit_of_measurement: "s"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Delay Reboot"
-    id: ups_delay_reboot
-    type: ups_delay_reboot
-    unit_of_measurement: "s"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Delay Reboot"
+  #   id: ups_delay_reboot
+  #   type: ups_delay_reboot
+  #   unit_of_measurement: "s"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
   # Enhanced battery threshold monitoring
   # - platform: ups_hid

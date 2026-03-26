@@ -128,47 +128,47 @@ sensor:
   #     sorting_weight: 30
 
   # === CONFIGURATION GROUP ===
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Delay Shutdown"
-    id: ups_delay_shutdown
-    type: ups_delay_shutdown
-    unit_of_measurement: "s"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_configuration
-      sorting_weight: 10
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Delay Shutdown"
+  #   id: ups_delay_shutdown
+  #   type: ups_delay_shutdown
+  #   unit_of_measurement: "s"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_configuration
+  #     sorting_weight: 10
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Delay Start"
-    id: ups_delay_start
-    type: ups_delay_start
-    unit_of_measurement: "s"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_configuration
-      sorting_weight: 20
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Delay Start"
+  #   id: ups_delay_start
+  #   type: ups_delay_start
+  #   unit_of_measurement: "s"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_configuration
+  #     sorting_weight: 20
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Delay Reboot"
-    id: ups_delay_reboot
-    type: ups_delay_reboot
-    unit_of_measurement: "s"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_configuration
-      sorting_weight: 30
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Delay Reboot"
+  #   id: ups_delay_reboot
+  #   type: ups_delay_reboot
+  #   unit_of_measurement: "s"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_configuration
+  #     sorting_weight: 30
 
 text_sensor:
   # === DEVICE INFORMATION GROUP ===
