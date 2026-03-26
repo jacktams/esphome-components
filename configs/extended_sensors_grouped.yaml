@@ -17,71 +17,71 @@ sensor:
       sorting_group_id: ups_battery_monitoring
       sorting_weight: 40
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Battery Voltage Nominal"
-    id: battery_voltage_nominal
-    type: battery_voltage_nominal
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
-    web_server:
-      sorting_group_id: ups_battery_monitoring
-      sorting_weight: 50
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Battery Voltage Nominal"
+  #   id: battery_voltage_nominal
+  #   type: battery_voltage_nominal
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   web_server:
+  #     sorting_group_id: ups_battery_monitoring
+  #     sorting_weight: 50
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Battery Runtime Low Threshold"
-    id: battery_runtime_low
-    type: battery_runtime_low
-    unit_of_measurement: "min"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
-    web_server:
-      sorting_group_id: ups_battery_monitoring
-      sorting_weight: 60
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Battery Runtime Low Threshold"
+  #   id: battery_runtime_low
+  #   type: battery_runtime_low
+  #   unit_of_measurement: "min"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   web_server:
+  #     sorting_group_id: ups_battery_monitoring
+  #     sorting_weight: 60
 
   # === VOLTAGE MONITORING GROUP ===
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Voltage Nominal"
-    id: input_voltage_nominal
-    type: input_voltage_nominal
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
-    web_server:
-      sorting_group_id: ups_voltage_monitoring
-      sorting_weight: 30
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Voltage Nominal"
+  #   id: input_voltage_nominal
+  #   type: input_voltage_nominal
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   web_server:
+  #     sorting_group_id: ups_voltage_monitoring
+  #     sorting_weight: 30
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Transfer Low"
-    id: input_transfer_low
-    type: input_transfer_low
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
-    web_server:
-      sorting_group_id: ups_voltage_monitoring
-      sorting_weight: 40
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Transfer Low"
+  #   id: input_transfer_low
+  #   type: input_transfer_low
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   web_server:
+  #     sorting_group_id: ups_voltage_monitoring
+  #     sorting_weight: 40
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Transfer High"
-    id: input_transfer_high
-    type: input_transfer_high
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
-    web_server:
-      sorting_group_id: ups_voltage_monitoring
-      sorting_weight: 50
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Transfer High"
+  #   id: input_transfer_high
+  #   type: input_transfer_high
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   web_server:
+  #     sorting_group_id: ups_voltage_monitoring
+  #     sorting_weight: 50
 
   - platform: ups_hid
     ups_hid_id: ups_monitor
@@ -96,18 +96,18 @@ sensor:
       sorting_weight: 60
 
   # === LOAD MONITORING GROUP ===
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Real Power Nominal"
-    id: ups_realpower_nominal
-    type: ups_realpower_nominal
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-    accuracy_decimals: 0
-    web_server:
-      sorting_group_id: ups_load_monitoring
-      sorting_weight: 20
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Real Power Nominal"
+  #   id: ups_realpower_nominal
+  #   type: ups_realpower_nominal
+  #   unit_of_measurement: "W"
+  #   device_class: power
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+  #   web_server:
+  #     sorting_group_id: ups_load_monitoring
+  #     sorting_weight: 20
 
   - platform: template
     name: "UPS Load Power"
@@ -188,26 +188,26 @@ text_sensor:
       sorting_group_id: ups_device_info
       sorting_weight: 30
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Firmware Version"
-    id: ups_firmware_version
-    type: firmware_version
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_device_info
-      sorting_weight: 40
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Firmware Version"
+  #   id: ups_firmware_version
+  #   type: firmware_version
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_device_info
+  #     sorting_weight: 40
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Manufacture Date"
-    id: ups_manufacture_date
-    type: ups_mfr_date
-    icon: "mdi:calendar-clock"
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_device_info
-      sorting_weight: 50
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Manufacture Date"
+  #   id: ups_manufacture_date
+  #   type: ups_mfr_date
+  #   icon: "mdi:calendar-clock"
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_device_info
+  #     sorting_weight: 50
 
   - platform: ups_hid
     ups_hid_id: ups_monitor
@@ -219,34 +219,34 @@ text_sensor:
       sorting_group_id: ups_battery_monitoring
       sorting_weight: 70
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Firmware Auxiliary"
-    id: firmware_aux
-    type: ups_firmware_aux
-    icon: "mdi:chip"
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_device_info
-      sorting_weight: 60
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Firmware Auxiliary"
+  #   id: firmware_aux
+  #   type: ups_firmware_aux
+  #   icon: "mdi:chip"
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_device_info
+  #     sorting_weight: 60
 
   # === CONFIGURATION GROUP ===
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Beeper Status"
-    id: ups_beeper_status
-    type: ups_beeper_status
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_configuration
-      sorting_weight: 40
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Beeper Status"
+  #   id: ups_beeper_status
+  #   type: ups_beeper_status
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_configuration
+  #     sorting_weight: 40
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Sensitivity"
-    id: input_sensitivity
-    type: input_sensitivity
-    entity_category: diagnostic
-    web_server:
-      sorting_group_id: ups_configuration
-      sorting_weight: 50
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Sensitivity"
+  #   id: input_sensitivity
+  #   type: input_sensitivity
+  #   entity_category: diagnostic
+  #   web_server:
+  #     sorting_group_id: ups_configuration
+  #     sorting_weight: 50

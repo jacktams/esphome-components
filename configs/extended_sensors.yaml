@@ -14,46 +14,46 @@ sensor:
     state_class: measurement
     accuracy_decimals: 1
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Battery Voltage Nominal"
-    id: battery_voltage_nominal
-    type: battery_voltage_nominal
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Battery Voltage Nominal"
+  #   id: battery_voltage_nominal
+  #   type: battery_voltage_nominal
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
   # Input power analysis
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Voltage Nominal"
-    id: input_voltage_nominal
-    type: input_voltage_nominal
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Voltage Nominal"
+  #   id: input_voltage_nominal
+  #   type: input_voltage_nominal
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Transfer Low"
-    id: input_transfer_low
-    type: input_transfer_low
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Transfer Low"
+  #   id: input_transfer_low
+  #   type: input_transfer_low
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Transfer High"
-    id: input_transfer_high
-    type: input_transfer_high
-    unit_of_measurement: "V"
-    device_class: voltage
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Transfer High"
+  #   id: input_transfer_high
+  #   type: input_transfer_high
+  #   unit_of_measurement: "V"
+  #   device_class: voltage
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
   - platform: ups_hid
     ups_hid_id: ups_monitor
@@ -65,15 +65,15 @@ sensor:
     accuracy_decimals: 1
 
   # UPS configuration metrics
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Real Power Nominal"
-    id: ups_realpower_nominal
-    type: ups_realpower_nominal
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Real Power Nominal"
+  #   id: ups_realpower_nominal
+  #   type: ups_realpower_nominal
+  #   unit_of_measurement: "W"
+  #   device_class: power
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
   - platform: ups_hid
     ups_hid_id: ups_monitor
@@ -106,15 +106,15 @@ sensor:
     accuracy_decimals: 0
 
   # Enhanced battery threshold monitoring
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Battery Runtime Low Threshold"
-    id: battery_runtime_low
-    type: battery_runtime_low
-    unit_of_measurement: "min"
-    device_class: duration
-    state_class: measurement
-    accuracy_decimals: 0
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Battery Runtime Low Threshold"
+  #   id: battery_runtime_low
+  #   type: battery_runtime_low
+  #   unit_of_measurement: "min"
+  #   device_class: duration
+  #   state_class: measurement
+  #   accuracy_decimals: 0
 
   # Calculated power consumption
   - platform: template
@@ -146,30 +146,30 @@ text_sensor:
     id: ups_serial_number
     type: serial_number
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Firmware Version"
-    id: ups_firmware_version
-    type: firmware_version
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Firmware Version"
+  #   id: ups_firmware_version
+  #   type: firmware_version
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Beeper Status"
-    id: ups_beeper_status
-    type: ups_beeper_status
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Beeper Status"
+  #   id: ups_beeper_status
+  #   type: ups_beeper_status
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Input Sensitivity"
-    id: input_sensitivity
-    type: input_sensitivity
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Input Sensitivity"
+  #   id: input_sensitivity
+  #   type: input_sensitivity
 
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "UPS Manufacture Date"
-    id: ups_manufacture_date
-    type: ups_mfr_date
-    icon: "mdi:calendar-clock"
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "UPS Manufacture Date"
+  #   id: ups_manufacture_date
+  #   type: ups_mfr_date
+  #   icon: "mdi:calendar-clock"
 
   - platform: ups_hid
     ups_hid_id: ups_monitor
@@ -179,9 +179,9 @@ text_sensor:
     icon: "mdi:battery-heart"
 
   # Additional enhanced text sensors from protocols
-  - platform: ups_hid
-    ups_hid_id: ups_monitor
-    name: "Firmware Auxiliary"
-    id: firmware_aux
-    type: ups_firmware_aux
-    icon: "mdi:chip"
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
+  #   name: "Firmware Auxiliary"
+  #   id: firmware_aux
+  #   type: ups_firmware_aux
+  #   icon: "mdi:chip"
