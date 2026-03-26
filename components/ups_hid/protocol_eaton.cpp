@@ -14,10 +14,11 @@ namespace ups_hid {
 
 static const char *const EATON_TAG = "ups_hid.eaton";
 
-// Report IDs known to work on Eaton/MGE devices (from Generic protocol logs)
+// Report IDs known to work on Eaton/MGE devices
 // Only probe IDs we've seen succeed — unknown IDs crash the USB stack
+// 0x02 and 0x03 consistently return all zeros on Eaton 5P — skip to save ~70ms
 static const uint8_t PROBE_REPORT_IDS[] = {
-    0x01, 0x02, 0x03, 0x06, 0x0C, 0x16, 0x30, 0x31,
+    0x01, 0x06, 0x0C, 0x16, 0x30, 0x31,
 };
 
 EatonHidProtocol::EatonHidProtocol(UpsHidComponent *parent)
@@ -224,12 +225,14 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
-    // Re-read all discovered reports (Input only)
+    // Re-read reports. Yield between reads so the main loop can service
+    // NUT server TCP, WiFi, and other tasks during the ~400ms USB window.
     int success = 0;
     for (uint8_t id : available_report_ids_) {
         if (read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
             success++;
         }
+        vTaskDelay(pdMS_TO_TICKS(1));  // yield to other tasks
     }
 
     if (success == 0) {
