@@ -117,26 +117,20 @@ sensor:
   #   accuracy_decimals: 0
 
   # Calculated power consumption
-  - platform: template
-    name: "UPS Load Power"
-    id: ups_load_power
-    unit_of_measurement: "W"
-    device_class: power
-    state_class: measurement
-    accuracy_decimals: 1
-    lambda: |-
-      if (!std::isnan(id(load_percentage).state)) {
-        float ups_max_power = 700.0; // Default fallback
-        
-        // Use HID nominal power if available
-        if (!std::isnan(id(ups_realpower_nominal).state)) {
-          ups_max_power = id(ups_realpower_nominal).state;
-        }
-        
-        return (ups_max_power * id(load_percentage).state) / 100.0;
-      }
-      return NAN;
-    update_interval: 30s
+  # - platform: template
+  #   name: "UPS Load Power"
+  #   id: ups_load_power
+  #   unit_of_measurement: "W"
+  #   device_class: power
+  #   state_class: measurement
+  #   accuracy_decimals: 1
+  #   lambda: |-
+  #     if (!std::isnan(id(load_percentage).state)) {
+  #       float ups_max_power = 700.0;
+  #       return (ups_max_power * id(load_percentage).state) / 100.0;
+  #     }
+  #     return NAN;
+  #   update_interval: 30s
 
 text_sensor:
   # Extended device information
