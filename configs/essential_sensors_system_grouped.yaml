@@ -1,0 +1,74 @@
+# Essential System Sensors Package with Entity Grouping (non-UPS)
+# System monitoring sensors independent of UPS
+# Use with: packages: !include configs/essential_sensors_system_grouped.yaml
+
+sensor:
+  # === SYSTEM MONITORING GROUP ===
+  - platform: uptime
+    name: "Uptime"
+    id: uptime_sensor
+    update_interval: 60s
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: system_monitoring
+      sorting_weight: 10
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_signal_sensor
+    update_interval: 60s
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: system_monitoring
+      sorting_weight: 20
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x >= -60;'
+            then:
+              - light.turn_on:
+                  id: status_led_${device_name}
+                  red: 0%
+                  green: 100%
+                  blue: 0%
+                  brightness: 30%
+        - if:
+            condition:
+              lambda: 'return x >= -75 && x < -60;'
+            then:
+              - light.turn_on:
+                  id: status_led_${device_name}
+                  red: 100%
+                  green: 50%
+                  blue: 0%
+                  brightness: 30%
+        - if:
+            condition:
+              lambda: 'return x < -75;'
+            then:
+              - light.turn_on:
+                  id: status_led_${device_name}
+                  red: 100%
+                  green: 0%
+                  blue: 0%
+                  brightness: 30%
+
+text_sensor:
+  # === SYSTEM MONITORING GROUP ===
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: ip_address
+      entity_category: diagnostic
+      web_server:
+        sorting_group_id: system_monitoring
+        sorting_weight: 30
+
+  - platform: version
+    name: "ESPHome Version"
+    id: esphome_version
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: system_monitoring
+      sorting_weight: 40

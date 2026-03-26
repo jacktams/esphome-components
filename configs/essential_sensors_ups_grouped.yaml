@@ -1,0 +1,117 @@
+# Essential UPS Sensors Package with Entity Grouping (UPS only)
+# Core UPS monitoring sensors without system sensors
+# Use with: packages: !include configs/essential_sensors_ups_grouped.yaml
+
+sensor:
+  # === BATTERY MONITORING GROUP ===
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Battery Level"
+    id: battery_level
+    type: battery_level
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    web_server:
+      sorting_group_id: ups_battery_monitoring
+      sorting_weight: 10
+
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Runtime Remaining"
+    id: runtime_remaining
+    type: runtime
+    unit_of_measurement: "min"
+    device_class: duration
+    state_class: measurement
+    accuracy_decimals: 0
+    web_server:
+      sorting_group_id: ups_battery_monitoring
+      sorting_weight: 20
+
+  # === VOLTAGE MONITORING GROUP ===
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Input Voltage"
+    id: input_voltage
+    type: input_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 1
+    web_server:
+      sorting_group_id: ups_voltage_monitoring
+      sorting_weight: 10
+
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Output Voltage"
+    id: output_voltage
+    type: output_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 1
+    web_server:
+      sorting_group_id: ups_voltage_monitoring
+      sorting_weight: 20
+
+  # === LOAD MONITORING GROUP ===
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Load Percentage"
+    id: load_percentage
+    type: load_percent
+    unit_of_measurement: "%"
+    device_class: power_factor
+    state_class: measurement
+    accuracy_decimals: 0
+    web_server:
+      sorting_group_id: ups_load_monitoring
+      sorting_weight: 10
+
+text_sensor:
+  # === DEVICE INFORMATION GROUP ===
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "UPS Manufacturer"
+    id: ups_manufacturer
+    type: manufacturer
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: ups_device_info
+      sorting_weight: 10
+
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "UPS Model"
+    id: ups_model
+    type: model
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: ups_device_info
+      sorting_weight: 20
+
+binary_sensor:
+  # === BATTERY MONITORING GROUP ===
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Battery Charging"
+    id: battery_charging
+    type: charging
+    device_class: battery
+    web_server:
+      sorting_group_id: ups_battery_monitoring
+      sorting_weight: 30
+
+  # === POWER STATUS GROUP ===
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Overload Warning"
+    id: overload_warning
+    type: overload
+    device_class: power
+    web_server:
+      sorting_group_id: ups_power_status
+      sorting_weight: 40
