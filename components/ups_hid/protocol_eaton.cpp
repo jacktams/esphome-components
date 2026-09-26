@@ -243,13 +243,19 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
-    // Log descriptor status on first visible cycle
+    // Log descriptor status on first visible cycle, plus a one-time dump of the
+    // parsed field map and raw report bytes — the reference for mapping fields
+    // the device exposes (e.g. ActivePower) to report IDs and bit offsets.
     if (first_read_ == 0) {
         ESP_LOGI(EATON_TAG, "Descriptor: %s (%zu fields from %zu bytes)",
                  descriptor_available_ ? "YES" : "NO",
                  descriptor_available_ ? descriptor_parser_.get_fields().size() : 0,
                  descriptor_size_);
         first_read_ = 1;
+        if (descriptor_available_) {
+            log_descriptor_fields();
+        }
+        log_all_reports();
     }
 
     parse_power_summary(data);
