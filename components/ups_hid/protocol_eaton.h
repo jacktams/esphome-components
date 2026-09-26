@@ -56,6 +56,7 @@ private:
 
     // One-shot flags to avoid repeated USB I/O for static data
     bool strings_read_{false};
+    bool dump_pending_{false};
     bool config_read_{false};
 
     // Parse specific data from reports

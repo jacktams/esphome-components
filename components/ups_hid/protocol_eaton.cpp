@@ -17,6 +17,13 @@ static const char *const EATON_TAG = "ups_hid.eaton";
 // Upper bound for a measured power reading when no nominal rating is known
 static constexpr int32_t EATON_MAX_PLAUSIBLE_POWER = 20000;
 
+// One-time diagnostic dump limits — keep the burst small enough that the
+// logger, API and web clients can drain it without stalling the loop task
+static constexpr uint16_t POWER_USAGE_DUMP_MIN = 0x0030;  // Voltage
+static constexpr uint16_t POWER_USAGE_DUMP_MAX = 0x0045;  // ConfigPercentLoad
+static constexpr size_t LOG_DUMP_MAX_FIELDS = 24;
+static constexpr uint32_t LOG_DUMP_LINE_DELAY_MS = 20;
+
 // Report IDs known to work on Eaton/MGE devices
 // Only probe IDs we've seen succeed — unknown IDs crash the USB stack
 // 0x02 and 0x03 consistently return all zeros on Eaton 5P — skip to save ~70ms
@@ -252,10 +259,7 @@ bool EatonHidProtocol::read_data(UpsData &data) {
                  descriptor_available_ ? descriptor_parser_.get_fields().size() : 0,
                  descriptor_size_);
         first_read_ = 1;
-        if (descriptor_available_) {
-            log_descriptor_fields();
-        }
-        log_all_reports();
+        dump_pending_ = true;
     }
 
     parse_power_summary(data);
@@ -264,6 +268,15 @@ bool EatonHidProtocol::read_data(UpsData &data) {
     parse_load(data);
     parse_config(data);
     read_device_strings(data);
+
+    // One-time diagnostic dump, last so a stall here cannot hold up parsing
+    if (dump_pending_) {
+        dump_pending_ = false;
+        if (descriptor_available_) {
+            log_descriptor_fields();
+        }
+        log_all_reports();
+    }
 
     return true;
 }
@@ -843,22 +856,39 @@ void EatonHidProtocol::log_all_reports() {
             hex += buf;
         }
         ESP_LOGI(EATON_TAG, "Report 0x%02X [%zu data bytes]: %s", id, d.size(), hex.c_str());
+        vTaskDelay(pdMS_TO_TICKS(LOG_DUMP_LINE_DELAY_MS));
     }
 }
 
 void EatonHidProtocol::log_descriptor_fields() {
+    // Only the Power Device measurement/configuration usages are listed.
+    // Dumping every parsed field floods the logger — each line is also pushed
+    // to API and web clients — and takes the device down mid-cycle.
     const auto& fields = descriptor_parser_.get_fields();
-    ESP_LOGI(EATON_TAG, "=== HID Descriptor Field Map (%zu fields) ===", fields.size());
+    ESP_LOGI(EATON_TAG, "=== Power fields (of %zu parsed) ===", fields.size());
+
+    size_t logged = 0;
     for (const auto& f : fields) {
+        if (f.usage_page != HID_USAGE_PAGE_POWER_DEVICE) continue;
+        if (f.usage_id < POWER_USAGE_DUMP_MIN || f.usage_id > POWER_USAGE_DUMP_MAX) continue;
+
+        if (logged >= LOG_DUMP_MAX_FIELDS) {
+            ESP_LOGI(EATON_TAG, "  ... truncated at %zu fields", LOG_DUMP_MAX_FIELDS);
+            break;
+        }
+
         const char* type_str = (f.report_type == 1) ? "Input" :
                                (f.report_type == 2) ? "Output" : "Feature";
-        ESP_LOGI(EATON_TAG, "  %s Report 0x%02X: Page=0x%04X Usage=0x%04X "
-                 "Offset=%u bits Size=%u bits Range=[%d,%d] Parent=0x%04X",
-                 type_str, f.report_id, f.usage_page, f.usage_id,
+        ESP_LOGI(EATON_TAG, "  %s Report 0x%02X: Usage=0x%04X Offset=%u Size=%u "
+                 "Range=[%d,%d] Parent=0x%04X",
+                 type_str, f.report_id, f.usage_id,
                  f.bit_offset, f.bit_size, f.logical_min, f.logical_max,
                  f.parent_collection);
+        logged++;
+        vTaskDelay(pdMS_TO_TICKS(LOG_DUMP_LINE_DELAY_MS));
     }
-    ESP_LOGI(EATON_TAG, "=== End Field Map ===");
+
+    ESP_LOGI(EATON_TAG, "=== %zu power fields listed ===", logged);
 }
 
 // Factory registration
