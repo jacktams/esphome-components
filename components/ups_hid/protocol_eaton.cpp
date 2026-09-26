@@ -19,8 +19,13 @@ static constexpr int32_t EATON_MAX_PLAUSIBLE_POWER = 20000;
 
 // One-time diagnostic dump limits — keep the burst small enough that the
 // logger, API and web clients can drain it without stalling the loop task
-static constexpr uint16_t POWER_USAGE_DUMP_MIN = 0x0030;  // Voltage
-static constexpr uint16_t POWER_USAGE_DUMP_MAX = 0x0045;  // ConfigPercentLoad
+// Power Device usages we care about: 0x30-0x3F are measured values that change
+// (Voltage, Current, Frequency, ApparentPower, ActivePower, PercentLoad) and
+// 0x40-0x45 are static configuration values (nominal ratings, thresholds)
+static constexpr uint16_t POWER_USAGE_MEASURED_MIN = 0x0030;
+static constexpr uint16_t POWER_USAGE_MEASURED_MAX = 0x003F;
+static constexpr uint16_t POWER_USAGE_CONFIG_MIN = 0x0040;
+static constexpr uint16_t POWER_USAGE_CONFIG_MAX = 0x0045;
 static constexpr size_t LOG_DUMP_MAX_FIELDS = 24;
 static constexpr uint8_t DUMP_AFTER_CYCLES = 6;  // ~1 min in, once the network is up
 static constexpr uint32_t LOG_DUMP_LINE_DELAY_MS = 20;
@@ -86,6 +91,16 @@ bool EatonHidProtocol::initialize() {
             }
             vTaskDelay(pdMS_TO_TICKS(50));
         }
+    }
+
+    // The power fields (ActivePower, ApparentPower and their nominal ratings)
+    // are declared under Feature reports, and requesting those as Feature
+    // crashes this device's USB stack. Input reports with the same ID carry
+    // the same layout, so probe those IDs as Input. Reports holding measured
+    // values join the poll list; configuration-only reports are cached here
+    // once, since their values never change.
+    if (descriptor_available_) {
+        probe_power_reports();
     }
 
     ESP_LOGI(EATON_TAG, "Found %zu available reports", available_report_ids_.size());
@@ -853,6 +868,51 @@ void EatonHidProtocol::read_device_strings(UpsData &data) {
     strings_read_ = true;
 }
 
+void EatonHidProtocol::probe_power_reports() {
+    // Collect the report IDs carrying power usages, noting which hold measured
+    // values (must be re-read every cycle) versus configuration-only values
+    std::map<uint8_t, bool> power_reports;  // report ID -> holds measured values
+    for (const auto &f : descriptor_parser_.get_fields()) {
+        if (f.usage_page != HID_USAGE_PAGE_POWER_DEVICE) continue;
+
+        bool measured = f.usage_id >= POWER_USAGE_MEASURED_MIN &&
+                        f.usage_id <= POWER_USAGE_MEASURED_MAX;
+        bool config = f.usage_id >= POWER_USAGE_CONFIG_MIN &&
+                      f.usage_id <= POWER_USAGE_CONFIG_MAX;
+        if (!measured && !config) continue;
+
+        power_reports[f.report_id] = power_reports[f.report_id] || measured;
+    }
+
+    for (const auto &entry : power_reports) {
+        uint8_t id = entry.first;
+        bool measured = entry.second;
+
+        // Skip IDs already in the poll list
+        bool already_probed = false;
+        for (uint8_t existing : available_report_ids_) {
+            if (existing == id) { already_probed = true; break; }
+        }
+        if (already_probed) continue;
+
+        if (!read_report(HID_REPORT_TYPE_INPUT, id, 8)) {
+            ESP_LOGD(EATON_TAG, "Power report 0x%02X not readable as Input", id);
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        if (measured) {
+            available_report_ids_.push_back(id);
+            ESP_LOGI(EATON_TAG, "Found power report 0x%02X (%zu data bytes, polled)",
+                     id, report_cache_[id].size());
+        } else {
+            ESP_LOGI(EATON_TAG, "Cached config report 0x%02X (%zu data bytes, read once)",
+                     id, report_cache_[id].size());
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 void EatonHidProtocol::log_all_reports() {
     for (uint8_t id : available_report_ids_) {
         auto it = report_cache_.find(id);
@@ -879,7 +939,7 @@ void EatonHidProtocol::log_descriptor_fields() {
     size_t logged = 0;
     for (const auto& f : fields) {
         if (f.usage_page != HID_USAGE_PAGE_POWER_DEVICE) continue;
-        if (f.usage_id < POWER_USAGE_DUMP_MIN || f.usage_id > POWER_USAGE_DUMP_MAX) continue;
+        if (f.usage_id < POWER_USAGE_MEASURED_MIN || f.usage_id > POWER_USAGE_CONFIG_MAX) continue;
 
         if (logged >= LOG_DUMP_MAX_FIELDS) {
             ESP_LOGI(EATON_TAG, "  ... truncated at %zu fields", LOG_DUMP_MAX_FIELDS);
@@ -891,8 +951,8 @@ void EatonHidProtocol::log_descriptor_fields() {
         ESP_LOGI(EATON_TAG, "  %s Report 0x%02X: Usage=0x%04X Offset=%u Size=%u "
                  "Range=[%d,%d] Parent=0x%04X",
                  type_str, f.report_id, f.usage_id,
-                 f.bit_offset, f.bit_size, f.logical_min, f.logical_max,
-                 f.parent_collection);
+                 f.bit_offset, f.bit_size, static_cast<int>(f.logical_min),
+                 static_cast<int>(f.logical_max), f.parent_collection);
         logged++;
         vTaskDelay(pdMS_TO_TICKS(LOG_DUMP_LINE_DELAY_MS));
     }

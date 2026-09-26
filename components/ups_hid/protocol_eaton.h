@@ -31,6 +31,10 @@ private:
                                      int32_t &value, uint8_t report_type = 1,
                                      uint16_t parent_collection = 0);
 
+    // Probe report IDs that carry Power Device usages but are declared under
+    // Feature reports, so their values are reachable from cached Input data
+    void probe_power_reports();
+
     // Sanity-check a measured power reading against its nominal rating
     static bool is_plausible_power(int32_t value, float nominal);
 
