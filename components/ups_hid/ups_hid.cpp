@@ -319,6 +319,10 @@ void UpsHidComponent::update_sensors() {
       value = ups_data_.power.input_transfer_high;
     } else if (type == sensor_type::BATTERY_RUNTIME_LOW && !std::isnan(ups_data_.battery.runtime_low)) {
       value = ups_data_.battery.runtime_low;
+    } else if (type == sensor_type::UPS_REALPOWER && !std::isnan(ups_data_.power.effective_realpower())) {
+      value = ups_data_.power.effective_realpower();
+    } else if (type == sensor_type::UPS_APPARENT_POWER && !std::isnan(ups_data_.power.effective_apparent_power())) {
+      value = ups_data_.power.effective_apparent_power();
     } else if (type == sensor_type::UPS_REALPOWER_NOMINAL && !std::isnan(ups_data_.power.realpower_nominal)) {
       value = ups_data_.power.realpower_nominal;
     } else if (type == sensor_type::UPS_DELAY_SHUTDOWN && !std::isnan(ups_data_.config.delay_shutdown)) {
@@ -736,6 +740,11 @@ float UpsHidComponent::get_output_voltage() const {
 float UpsHidComponent::get_load_percent() const {
   std::lock_guard<std::mutex> lock(data_mutex_);
   return ups_data_.power.load_percent;
+}
+
+float UpsHidComponent::get_realpower() const {
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  return ups_data_.power.effective_realpower();
 }
 
 float UpsHidComponent::get_runtime_minutes() const {

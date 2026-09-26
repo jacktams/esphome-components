@@ -31,6 +31,9 @@ private:
                                      int32_t &value, uint8_t report_type = 1,
                                      uint16_t parent_collection = 0);
 
+    // Sanity-check a measured power reading against its nominal rating
+    static bool is_plausible_power(int32_t value, float nominal);
+
     // Extract a value from report data at a given bit offset and size
     int32_t extract_field_value(const std::vector<uint8_t> &data,
                                 uint16_t bit_offset, uint16_t bit_size);

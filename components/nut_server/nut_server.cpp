@@ -474,7 +474,8 @@ void NutServerComponent::handle_list_var(NutClient &client, const std::string &a
     "input.voltage", "input.voltage.nominal", "input.frequency", 
     "input.transfer.low", "input.transfer.high",
     "output.voltage", "output.voltage.nominal", 
-    "ups.load", "ups.realpower.nominal", "ups.power.nominal"
+    "ups.load", "ups.realpower", "ups.power",
+    "ups.realpower.nominal", "ups.power.nominal"
   };
   
   for (const auto &var : variables) {
@@ -818,6 +819,14 @@ std::string NutServerComponent::get_ups_var(const std::string &var_name) {
     if (var_name == "ups.load") {
       float load_percent = ups_hid_->get_load_percent();
       if (load_percent >= 0) return std::to_string(static_cast<int>(load_percent));
+    }
+    if (var_name == "ups.realpower") {
+      float realpower = ups_data.power.effective_realpower();
+      if (!std::isnan(realpower)) return std::to_string(static_cast<int>(realpower));
+    }
+    if (var_name == "ups.power") {
+      float apparent_power = ups_data.power.effective_apparent_power();
+      if (!std::isnan(apparent_power)) return std::to_string(static_cast<int>(apparent_power));
     }
     if (var_name == "ups.realpower.nominal" && !std::isnan(ups_data.power.realpower_nominal)) {
       return std::to_string(static_cast<int>(ups_data.power.realpower_nominal));

@@ -67,6 +67,16 @@ sensor:
   # UPS configuration metrics
   # - platform: ups_hid
   #   ups_hid_id: ups_monitor
+  #   name: "UPS Apparent Power"
+  #   id: ups_apparent_power
+  #   type: ups_apparent_power
+  #   unit_of_measurement: "VA"
+  #   device_class: apparent_power
+  #   state_class: measurement
+  #   accuracy_decimals: 0
+
+  # - platform: ups_hid
+  #   ups_hid_id: ups_monitor
   #   name: "UPS Real Power Nominal"
   #   id: ups_realpower_nominal
   #   type: ups_realpower_nominal

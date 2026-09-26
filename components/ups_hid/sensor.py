@@ -8,12 +8,14 @@ from esphome.const import (
     DEVICE_CLASS_POWER_FACTOR,
     DEVICE_CLASS_DURATION,
     DEVICE_CLASS_POWER,
+    DEVICE_CLASS_APPARENT_POWER,
     DEVICE_CLASS_EMPTY,
     UNIT_PERCENT,
     UNIT_VOLT,
     UNIT_MINUTE,
     UNIT_HERTZ,
     UNIT_WATT,
+    UNIT_VOLT_AMPS,
     UNIT_SECOND,
 )
 
@@ -77,6 +79,16 @@ SENSOR_TYPES = {
     "input_transfer_high": {
         "unit": UNIT_VOLT,
         "device_class": DEVICE_CLASS_VOLTAGE,
+        "accuracy_decimals": 0,
+    },
+    "ups_realpower": {
+        "unit": UNIT_WATT,
+        "device_class": DEVICE_CLASS_POWER,
+        "accuracy_decimals": 0,
+    },
+    "ups_apparent_power": {
+        "unit": UNIT_VOLT_AMPS,
+        "device_class": DEVICE_CLASS_APPARENT_POWER,
         "accuracy_decimals": 0,
     },
     "ups_realpower_nominal": {

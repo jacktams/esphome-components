@@ -108,6 +108,7 @@ namespace esphome
       float get_input_voltage() const;
       float get_output_voltage() const;
       float get_load_percent() const;
+      float get_realpower() const;
       float get_runtime_minutes() const;
       
       // Test control methods

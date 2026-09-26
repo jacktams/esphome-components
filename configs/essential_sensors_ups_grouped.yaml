@@ -71,6 +71,19 @@ sensor:
       sorting_group_id: ups_load_monitoring
       sorting_weight: 10
 
+  - platform: ups_hid
+    ups_hid_id: ups_monitor
+    name: "Real Power"
+    id: real_power
+    type: ups_realpower
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+    web_server:
+      sorting_group_id: ups_load_monitoring
+      sorting_weight: 20
+
 text_sensor:
   # === DEVICE INFORMATION GROUP ===
   - platform: ups_hid

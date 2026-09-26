@@ -186,6 +186,8 @@ namespace sensor_type {
     static constexpr const char* INPUT_TRANSFER_LOW = "input_transfer_low";
     static constexpr const char* INPUT_TRANSFER_HIGH = "input_transfer_high";
     static constexpr const char* BATTERY_RUNTIME_LOW = "battery_runtime_low";
+    static constexpr const char* UPS_REALPOWER = "ups_realpower";
+    static constexpr const char* UPS_APPARENT_POWER = "ups_apparent_power";
     static constexpr const char* UPS_REALPOWER_NOMINAL = "ups_realpower_nominal";
     static constexpr const char* UPS_DELAY_SHUTDOWN = "ups_delay_shutdown";
     static constexpr const char* UPS_DELAY_START = "ups_delay_start";

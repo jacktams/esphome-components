@@ -19,6 +19,8 @@ struct PowerData {
   float output_voltage{NAN};           // Current output voltage (V)
   float output_voltage_nominal{NAN};   // Nominal output voltage (V)
   float load_percent{NAN};             // Current load percentage (0-100%)
+  float realpower{NAN};                // Measured real power draw (W), if reported by the UPS
+  float apparent_power{NAN};           // Measured apparent power draw (VA), if reported by the UPS
   
   // Power ratings and capabilities
   float realpower_nominal{NAN};        // Nominal real power rating (W)
@@ -52,6 +54,26 @@ struct PowerData {
   
   bool has_load_info() const {
     return !std::isnan(load_percent);
+  }
+
+  // Real power draw in watts: measured value when the UPS reports one,
+  // otherwise estimated from load percentage and the nominal power rating
+  // (same approach NUT clients use when ups.realpower is absent).
+  float effective_realpower() const {
+    if (!std::isnan(realpower)) return realpower;
+    if (!std::isnan(load_percent) && !std::isnan(realpower_nominal)) {
+      return realpower_nominal * load_percent / 100.0f;
+    }
+    return NAN;
+  }
+
+  // Apparent power draw in VA, measured or estimated from the VA rating
+  float effective_apparent_power() const {
+    if (!std::isnan(apparent_power)) return apparent_power;
+    if (!std::isnan(load_percent) && !std::isnan(apparent_power_nominal)) {
+      return apparent_power_nominal * load_percent / 100.0f;
+    }
+    return NAN;
   }
   
   // Validation and utility methods

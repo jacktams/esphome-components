@@ -24,8 +24,8 @@ Complete UPS monitoring with automatic LED status indication:
 - **Hardware Flexible**: Compatible with any ESPHome light component
 
 #### `essential_sensors.yaml` / `essential_sensors_grouped.yaml`
-Core monitoring sensors (5 sensors) available on all protocols:
-- **Sensors**: `battery_level`, `input_voltage`, `output_voltage`, `load_percent`, `runtime`  
+Core monitoring sensors (6 sensors) available on all protocols:
+- **Sensors**: `battery_level`, `input_voltage`, `output_voltage`, `load_percent`, `ups_realpower`, `runtime`  
 - **Text Sensors**: `manufacturer`, `model`
 - **Binary Sensors**: `charging`, `overload`
 - **System Monitoring**: uptime, WiFi signal, IP address, ESPHome version
@@ -71,7 +71,7 @@ Advanced monitoring (17 additional sensors) for feature-rich devices:
 - `input_transfer_low`, `input_transfer_high`, `frequency`
 
 **Power & Configuration**:
-- `ups_realpower_nominal`, `ups_delay_shutdown`, `ups_delay_start`, `ups_delay_reboot`
+- `ups_realpower_nominal`, `ups_apparent_power`, `ups_delay_shutdown`, `ups_delay_start`, `ups_delay_reboot`
 
 **Dynamic Timer Monitoring** (negative values = no active countdown):
 - `ups_timer_shutdown`, `ups_timer_start`, `ups_timer_reboot`
@@ -185,7 +185,7 @@ CyberPower CP1500 series optimizations:
 ### **Sensor Breakdown by Type:**
 
 #### **Numeric Sensors** (27 total available):
-- **Essential (5)**: battery_level, input_voltage, output_voltage, load_percent, runtime
+- **Essential (6)**: battery_level, input_voltage, output_voltage, load_percent, ups_realpower, runtime
 - **Extended (17)**: Enhanced voltage/power/configuration/threshold monitoring
 - **Timer (5)**: ups_timer_shutdown, ups_timer_start, ups_timer_reboot, active_timer_count, fast_polling_status
 

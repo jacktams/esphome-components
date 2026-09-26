@@ -124,7 +124,10 @@ The following NUT variables are exposed based on available UPS data:
 - `input.voltage` - Input voltage from mains
 - `output.voltage` - Output voltage to load
 - `ups.load` - Load percentage (0-100)
-- `ups.power` - Output power in watts
+- `ups.realpower` - Real output power in watts (measured, or estimated from load and nominal rating)
+- `ups.power` - Apparent output power in VA (measured, or estimated from load and nominal rating)
+- `ups.realpower.nominal` - Nominal real power rating in watts
+- `ups.power.nominal` - Nominal apparent power rating in VA
 - `ups.status` - Combined status flags:
   - `OL` - Online (mains power present)
   - `OB` - On Battery

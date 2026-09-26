@@ -14,6 +14,9 @@ namespace ups_hid {
 
 static const char *const EATON_TAG = "ups_hid.eaton";
 
+// Upper bound for a measured power reading when no nominal rating is known
+static constexpr int32_t EATON_MAX_PLAUSIBLE_POWER = 20000;
+
 // Report IDs known to work on Eaton/MGE devices
 // Only probe IDs we've seen succeed — unknown IDs crash the USB stack
 // 0x02 and 0x03 consistently return all zeros on Eaton 5P — skip to save ~70ms
@@ -696,6 +699,43 @@ void EatonHidProtocol::parse_load(UpsData &data) {
             ESP_LOGD(EATON_TAG, "Apparent power nominal (descriptor): %d VA", value);
         }
     }
+
+    // Measured output power — ActivePower (0x84, 0x34) / ApparentPower (0x84, 0x33)
+    // Per NUT: UPS.PowerConverter.Output.ActivePower -> ups.realpower.
+    // Not all Eaton models report these; when absent, PowerData estimates
+    // real power from load percentage and the nominal rating.
+    if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE,
+                                    HID_USAGE_POW_ACTIVE_POWER, value,
+                                    1, HID_USAGE_POW_OUTPUT)) {
+        if (is_plausible_power(value, data.power.realpower_nominal)) {
+            data.power.realpower = static_cast<float>(value);
+            ESP_LOGD(EATON_TAG, "Real power (descriptor): %d W", value);
+        } else {
+            ESP_LOGD(EATON_TAG, "Ignoring implausible real power: %d W", value);
+        }
+    }
+
+    if (read_field_from_descriptor(HID_USAGE_PAGE_POWER_DEVICE,
+                                    HID_USAGE_POW_APPARENT_POWER, value,
+                                    1, HID_USAGE_POW_OUTPUT)) {
+        if (is_plausible_power(value, data.power.apparent_power_nominal)) {
+            data.power.apparent_power = static_cast<float>(value);
+            ESP_LOGD(EATON_TAG, "Apparent power (descriptor): %d VA", value);
+        } else {
+            ESP_LOGD(EATON_TAG, "Ignoring implausible apparent power: %d VA", value);
+        }
+    }
+}
+
+// A measured power reading is only trusted when it is non-negative and,
+// where the nominal rating is known, within 50% overload of it — bogus
+// descriptor field positions otherwise show up as wild wattage.
+bool EatonHidProtocol::is_plausible_power(int32_t value, float nominal) {
+    if (value < 0) return false;
+    if (!std::isnan(nominal) && nominal > 0) {
+        return static_cast<float>(value) <= nominal * 1.5f;
+    }
+    return value <= EATON_MAX_PLAUSIBLE_POWER;
 }
 
 void EatonHidProtocol::parse_config(UpsData &data) {

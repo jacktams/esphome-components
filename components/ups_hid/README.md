@@ -108,7 +108,7 @@ ups_hid:
 
 ### Platform Types
 
-**Sensor Platform**: `battery_level`, `input_voltage`, `output_voltage`, `load_percent`, `runtime`, `frequency` + extended sensors
+**Sensor Platform**: `battery_level`, `input_voltage`, `output_voltage`, `load_percent`, `ups_realpower`, `runtime`, `frequency` + extended sensors
 
 **Binary Sensor Platform**: `online`, `on_battery`, `low_battery`, `charging`, `fault`, `overload`
 
