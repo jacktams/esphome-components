@@ -22,6 +22,7 @@ static constexpr int32_t EATON_MAX_PLAUSIBLE_POWER = 20000;
 static constexpr uint16_t POWER_USAGE_DUMP_MIN = 0x0030;  // Voltage
 static constexpr uint16_t POWER_USAGE_DUMP_MAX = 0x0045;  // ConfigPercentLoad
 static constexpr size_t LOG_DUMP_MAX_FIELDS = 24;
+static constexpr uint8_t DUMP_AFTER_CYCLES = 6;  // ~1 min in, once the network is up
 static constexpr uint32_t LOG_DUMP_LINE_DELAY_MS = 20;
 
 // Report IDs known to work on Eaton/MGE devices
@@ -250,16 +251,24 @@ bool EatonHidProtocol::read_data(UpsData &data) {
         return false;
     }
 
-    // Log descriptor status on first visible cycle, plus a one-time dump of the
-    // parsed field map and raw report bytes — the reference for mapping fields
-    // the device exposes (e.g. ActivePower) to report IDs and bit offsets.
+    // Log descriptor status on first visible cycle
     if (first_read_ == 0) {
         ESP_LOGI(EATON_TAG, "Descriptor: %s (%zu fields from %zu bytes)",
                  descriptor_available_ ? "YES" : "NO",
                  descriptor_available_ ? descriptor_parser_.get_fields().size() : 0,
                  descriptor_size_);
         first_read_ = 1;
-        dump_pending_ = true;
+    }
+
+    // One-time dump of the field map and raw report bytes — the reference for
+    // mapping fields the device exposes (e.g. ActivePower) to report IDs and
+    // bit offsets. Held back a few cycles: at first read WiFi and the web
+    // server are not serving yet, so nothing is attached to receive it.
+    if (read_count_ < DUMP_AFTER_CYCLES) {
+        read_count_++;
+        if (read_count_ == DUMP_AFTER_CYCLES) {
+            dump_pending_ = true;
+        }
     }
 
     parse_power_summary(data);
