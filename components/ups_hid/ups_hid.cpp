@@ -18,27 +18,101 @@
 namespace esphome {
 namespace ups_hid {
 
+namespace {
+// RAII wrapper around the FreeRTOS mutex that guards protocol/USB access.
+// A FreeRTOS mutex is used rather than std::timed_mutex so a bounded wait is
+// available on every toolchain the component builds with.
+class ProtocolLock {
+ public:
+  // Ticks, not milliseconds, so portMAX_DELAY can be passed through unscaled
+  ProtocolLock(SemaphoreHandle_t sem, TickType_t timeout_ticks) : sem_(sem) {
+    held_ = sem_ != nullptr && xSemaphoreTake(sem_, timeout_ticks) == pdTRUE;
+  }
+  ~ProtocolLock() {
+    if (held_) {
+      xSemaphoreGive(sem_);
+    }
+  }
+  bool held() const { return held_; }
+
+ private:
+  SemaphoreHandle_t sem_;
+  bool held_{false};
+};
+}  // namespace
+
 void UpsHidComponent::setup() {
   ESP_LOGCONFIG(TAG, log_messages::SETTING_UP);
   
+  protocol_mutex_ = xSemaphoreCreateMutex();
+  if (protocol_mutex_ == nullptr) {
+    ESP_LOGE(TAG, "Failed to create protocol mutex");
+    mark_failed();
+    return;
+  }
+
   if (!initialize_transport()) {
     ESP_LOGE(TAG, log_messages::TRANSPORT_INIT_FAILED);
     mark_failed();
     return;
   }
   
-  // Protocol detection is deferred to update() method to handle asynchronous USB enumeration
+  if (!start_poll_task()) {
+    ESP_LOGE(TAG, "Failed to start UPS poll task");
+    mark_failed();
+    return;
+  }
+
+  // Protocol detection is deferred to the poll task to handle asynchronous USB enumeration
   ESP_LOGCONFIG(TAG, log_messages::SETUP_COMPLETE);
 }
 
-void UpsHidComponent::update() {
-  if (!transport_ || !transport_->is_connected()) {
-    // Device not connected yet - normal during startup or after disconnection
-    ESP_LOGD(TAG, log_messages::WAITING_FOR_DEVICE);
+bool UpsHidComponent::start_poll_task() {
+  poll_task_running_ = true;
+  BaseType_t created = xTaskCreate(poll_task_trampoline, "ups_hid_poll", POLL_TASK_STACK_SIZE,
+                                   this, 1, &poll_task_handle_);
+  if (created != pdPASS) {
+    poll_task_running_ = false;
+    poll_task_handle_ = nullptr;
+    return false;
+  }
+  return true;
+}
+
+void UpsHidComponent::poll_task_trampoline(void *arg) {
+  static_cast<UpsHidComponent *>(arg)->poll_task_loop();
+}
+
+void UpsHidComponent::poll_task_loop() {
+  while (poll_task_running_.load()) {
+    // Wake on the notification from update(); the timeout is only a safety net
+    // so the task still reacts if poll_task_running_ is cleared.
+    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000)) == 0) {
+      continue;
+    }
+    if (!poll_task_running_.load()) {
+      break;
+    }
+    run_poll_cycle();
+    poll_in_flight_ = false;
+  }
+
+  poll_task_handle_ = nullptr;
+  vTaskDelete(nullptr);
+}
+
+// The full poll: protocol detection (seconds on first run) and a round of
+// report reads. Runs on the worker task only - never on the ESPHome loop.
+void UpsHidComponent::run_poll_cycle() {
+  ProtocolLock lock(protocol_mutex_, portMAX_DELAY);
+  if (!lock.held()) {
     return;
   }
-  
-  // Check if protocol detection is needed
+
+  if (!transport_ || !transport_->is_connected()) {
+    return;
+  }
+
   if (!active_protocol_) {
     ESP_LOGI(TAG, log_messages::ATTEMPTING_DETECTION);
     if (detect_protocol()) {
@@ -47,33 +121,85 @@ void UpsHidComponent::update() {
     } else {
       consecutive_failures_++;
       ESP_LOGW(TAG, log_messages::DETECTION_FAILED, consecutive_failures_);
-      
+
       if (consecutive_failures_ > max_consecutive_failures_) {
-        ESP_LOGE(TAG, log_messages::TOO_MANY_FAILURES);
-        mark_failed();
+        // mark_failed() touches ESPHome component state, so leave it to the loop
+        detection_failed_ = true;
       }
       return;
     }
   }
-  
-  // Normal data reading with active protocol
+
   if (read_ups_data()) {
-    update_sensors();
     consecutive_failures_ = 0;
     last_successful_read_ = millis();
-    
+
     // Check for timer updates (fast polling during countdowns)
     check_and_update_timers();
+
+    data_ready_ = true;
   } else {
     consecutive_failures_++;
     ESP_LOGW(TAG, log_messages::READ_FAILED, consecutive_failures_);
-    
+
     if (consecutive_failures_ > max_consecutive_failures_) {
       ESP_LOGW(TAG, log_messages::RESETTING_PROTOCOL);
-      active_protocol_.reset();  // Force protocol re-detection on next update
+      active_protocol_.reset();  // Force protocol re-detection on next cycle
+      {
+        std::lock_guard<std::mutex> data_lock(data_mutex_);
+        protocol_name_.clear();
+      }
       consecutive_failures_ = 0;
     }
   }
+}
+
+bool UpsHidComponent::run_protocol_command(const char *what,
+                                           const std::function<bool(UpsProtocolBase *)> &fn) {
+  ProtocolLock lock(protocol_mutex_, pdMS_TO_TICKS(PROTOCOL_COMMAND_WAIT_MS));
+  if (!lock.held()) {
+    ESP_LOGW(TAG, "UPS busy, dropped %s", what);
+    return false;
+  }
+  if (!active_protocol_) {
+    ESP_LOGW(TAG, "No active protocol for %s", what);
+    return false;
+  }
+  return fn(active_protocol_.get());
+}
+
+// Runs on the ESPHome loop task and must return promptly: it only publishes
+// what the poll worker produced and kicks off the next cycle.
+void UpsHidComponent::update() {
+  // Sensor publishing has to happen on the loop task, so it stays here
+  if (data_ready_.exchange(false)) {
+    update_sensors();
+  }
+
+  if (detection_failed_.exchange(false)) {
+    ESP_LOGE(TAG, log_messages::TOO_MANY_FAILURES);
+    mark_failed();
+    return;
+  }
+
+  if (!transport_ || !transport_->is_connected()) {
+    // Device not connected yet - normal during startup or after disconnection
+    ESP_LOGD(TAG, log_messages::WAITING_FOR_DEVICE);
+    return;
+  }
+
+  if (poll_in_flight_.load()) {
+    // Protocol init and slow devices can outlast one update interval
+    ESP_LOGD(TAG, "Poll cycle still running, skipping this interval");
+    return;
+  }
+
+  if (poll_task_handle_ == nullptr) {
+    return;
+  }
+
+  poll_in_flight_ = true;
+  xTaskNotifyGive(poll_task_handle_);
 }
 
 void UpsHidComponent::dump_config() {
@@ -91,9 +217,9 @@ void UpsHidComponent::dump_config() {
 
   if (transport_ && transport_->is_connected()) {
     ESP_LOGCONFIG(TAG, "  Status: %s", status::CONNECTED);
-    if (active_protocol_) {
-      ESP_LOGCONFIG(TAG, "  Active Protocol: %s", 
-                   active_protocol_->get_protocol_name().c_str());
+    std::string protocol_name = get_protocol_name();
+    if (protocol_name != protocol::NONE) {
+      ESP_LOGCONFIG(TAG, "  Active Protocol: %s", protocol_name.c_str());
     } else {
       ESP_LOGCONFIG(TAG, "  Protocol Status: %s", status::DETECTION_PENDING);
     }
@@ -225,10 +351,13 @@ bool UpsHidComponent::detect_protocol() {
   ESP_LOGI(TAG, "Protocol initialized: %s", 
            active_protocol_->get_protocol_name().c_str());
   
-  // Set the detected protocol in ups_data_ after successful detection
+  // Set the detected protocol in ups_data_ after successful detection. The
+  // name is cached here too, so the loop task never dereferences
+  // active_protocol_ while this task may be replacing it.
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     ups_data_.device.detected_protocol = active_protocol_->get_protocol_type();
+    protocol_name_ = active_protocol_->get_protocol_name();
   }
   
   return true;
@@ -240,21 +369,22 @@ bool UpsHidComponent::read_ups_data() {
     return false;
   }
   
-  std::lock_guard<std::mutex> lock(data_mutex_);
+  // Read into a scratch copy: the reads take hundreds of milliseconds and
+  // holding data_mutex_ across them would block every sensor and lambda that
+  // reads the cached data from the loop task.
+  UpsData fresh;
+  fresh.reset();
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    // Preserve the detected protocol across the reset
+    fresh.device.detected_protocol = ups_data_.device.detected_protocol;
+  }
   
-  // Preserve the detected protocol before reset
-  DeviceInfo::DetectedProtocol current_protocol = ups_data_.device.detected_protocol;
-  
-  // Reset data before reading
-  ups_data_.reset();
-  
-  // Restore the detected protocol after reset
-  ups_data_.device.detected_protocol = current_protocol;
-  
-  // Read data through protocol
-  bool success = active_protocol_->read_data(ups_data_);
+  bool success = active_protocol_->read_data(fresh);
   
   if (success) {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    ups_data_ = fresh;
     ESP_LOGV(TAG, "Successfully read UPS data");
   } else {
     ESP_LOGW(TAG, "Failed to read UPS data via protocol");
@@ -398,7 +528,7 @@ void UpsHidComponent::update_sensors() {
     } else if (type == text_sensor_type::STATUS && !ups_data_.power.status.empty()) {
       value = ups_data_.power.status;
     } else if (type == text_sensor_type::PROTOCOL) {
-      value = get_protocol_name();
+      value = protocol_name_.empty() ? std::string(protocol::NONE) : protocol_name_;
     } else if (type == text_sensor_type::BATTERY_MFR_DATE && !ups_data_.battery.mfr_date.empty()) {
       value = ups_data_.battery.mfr_date;
     } else if (type == text_sensor_type::UPS_MFR_DATE && !ups_data_.device.mfr_date.empty()) {
@@ -475,109 +605,71 @@ void UpsHidComponent::register_delay_number(UpsDelayNumber *number) {
 
 // Test control methods
 bool UpsHidComponent::start_battery_test_quick() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for battery test");
-    return false;
-  }
-  return active_protocol_->start_battery_test_quick();
+  return run_protocol_command("battery test",
+                              [](UpsProtocolBase *p) { return p->start_battery_test_quick(); });
 }
 
 bool UpsHidComponent::start_battery_test_deep() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for battery test");
-    return false;
-  }
-  return active_protocol_->start_battery_test_deep();
+  return run_protocol_command("battery test",
+                              [](UpsProtocolBase *p) { return p->start_battery_test_deep(); });
 }
 
 bool UpsHidComponent::stop_battery_test() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for battery test");
-    return false;
-  }
-  return active_protocol_->stop_battery_test();
+  return run_protocol_command("battery test",
+                              [](UpsProtocolBase *p) { return p->stop_battery_test(); });
 }
 
 bool UpsHidComponent::start_ups_test() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for UPS test");
-    return false;
-  }
-  return active_protocol_->start_ups_test();
+  return run_protocol_command("UPS test",
+                              [](UpsProtocolBase *p) { return p->start_ups_test(); });
 }
 
 bool UpsHidComponent::stop_ups_test() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for UPS test");
-    return false;
-  }
-  return active_protocol_->stop_ups_test();
+  return run_protocol_command("UPS test",
+                              [](UpsProtocolBase *p) { return p->stop_ups_test(); });
 }
 
 // Beeper control methods
 bool UpsHidComponent::beeper_enable() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for beeper control");
-    return false;
-  }
-  return active_protocol_->beeper_enable();
+  return run_protocol_command("beeper control",
+                              [](UpsProtocolBase *p) { return p->beeper_enable(); });
 }
 
 bool UpsHidComponent::beeper_disable() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for beeper control");
-    return false;
-  }
-  return active_protocol_->beeper_disable();
+  return run_protocol_command("beeper control",
+                              [](UpsProtocolBase *p) { return p->beeper_disable(); });
 }
 
 bool UpsHidComponent::beeper_mute() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for beeper control");
-    return false;
-  }
-  return active_protocol_->beeper_mute();
+  return run_protocol_command("beeper control",
+                              [](UpsProtocolBase *p) { return p->beeper_mute(); });
 }
 
 bool UpsHidComponent::beeper_test() {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for beeper control");
-    return false;
-  }
-  return active_protocol_->beeper_test();
+  return run_protocol_command("beeper control",
+                              [](UpsProtocolBase *p) { return p->beeper_test(); });
 }
 
 // Delay configuration methods
 bool UpsHidComponent::set_shutdown_delay(int seconds) {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for delay configuration");
-    return false;
-  }
-  return active_protocol_->set_shutdown_delay(seconds);
+  return run_protocol_command("delay configuration",
+                              [seconds](UpsProtocolBase *p) { return p->set_shutdown_delay(seconds); });
 }
 
 bool UpsHidComponent::set_start_delay(int seconds) {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for delay configuration");
-    return false;
-  }
-  return active_protocol_->set_start_delay(seconds);
+  return run_protocol_command("delay configuration",
+                              [seconds](UpsProtocolBase *p) { return p->set_start_delay(seconds); });
 }
 
 bool UpsHidComponent::set_reboot_delay(int seconds) {
-  if (!active_protocol_) {
-    ESP_LOGW(TAG, "No active protocol for delay configuration");
-    return false;
-  }
-  return active_protocol_->set_reboot_delay(seconds);
+  return run_protocol_command("delay configuration",
+                              [seconds](UpsProtocolBase *p) { return p->set_reboot_delay(seconds); });
 }
 
 // Additional protocol access method
 std::string UpsHidComponent::get_protocol_name() const {
-  if (active_protocol_) {
-    return active_protocol_->get_protocol_name();
-  }
-  return protocol::NONE;
+  std::lock_guard<std::mutex> lock(data_mutex_);
+  return protocol_name_.empty() ? std::string(protocol::NONE) : protocol_name_;
 }
 
 
@@ -611,6 +703,14 @@ void UpsHidComponent::log_suppressed_errors(ErrorRateLimit& limiter) {
 }
 
 void UpsHidComponent::cleanup() {
+  // Stop the worker first so nothing is mid-transfer while the transport goes
+  if (poll_task_running_.exchange(false) && poll_task_handle_ != nullptr) {
+    xTaskNotifyGive(poll_task_handle_);
+    for (int i = 0; i < 100 && poll_task_handle_ != nullptr; i++) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
+
   if (transport_) {
     transport_->deinitialize();
     transport_.reset();
@@ -618,6 +718,10 @@ void UpsHidComponent::cleanup() {
   
   active_protocol_.reset();
   connected_ = false;
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    protocol_name_.clear();
+  }
   
   ESP_LOGD(TAG, "Component cleanup completed");
 }
@@ -647,7 +751,7 @@ void UpsHidComponent::check_and_update_timers() {
     last_timer_poll_ = now;
     
     // Try to read timer data
-    UpsData timer_data = ups_data_;  // Copy current data
+    UpsData timer_data = get_ups_data();  // Copy current data
     if (active_protocol_->read_timer_data(timer_data)) {
       // Update only timer-related fields
       {
@@ -663,8 +767,8 @@ void UpsHidComponent::check_and_update_timers() {
         set_fast_polling_mode(timers_active);
       }
       
-      // Update timer sensors immediately when values change
-      update_sensors();
+      // Publish on the next loop pass; sensors must not be touched from here
+      data_ready_ = true;
     }
   }
 }

@@ -26,6 +26,8 @@ namespace esphome { namespace text_sensor { class TextSensor; } }
 #include <unordered_map>
 #include <string>
 #include <mutex>
+#include <atomic>
+#include <functional>
 
 #ifdef USE_ESP32
 #include "esp_err.h"
@@ -158,7 +160,8 @@ namespace esphome
       uint32_t consecutive_failures_{0};
       uint32_t max_consecutive_failures_{5};  // Limit re-detection attempts
       UpsData ups_data_;
-      mutable std::mutex data_mutex_;  // Protect ups_data_ access
+      std::string protocol_name_{};    // cached so the loop never touches active_protocol_
+      mutable std::mutex data_mutex_;  // Protect ups_data_ / protocol_name_ access
       
       // Fast polling for timer countdown
       bool fast_polling_mode_{false};
@@ -191,6 +194,32 @@ namespace esphome
       std::unordered_map<std::string, text_sensor::TextSensor *> text_sensors_;
 #endif
       std::vector<class UpsDelayNumber *> delay_numbers_;
+
+      // Background poll worker. Every USB exchange blocks for hundreds of
+      // milliseconds (and a full protocol init for several seconds), which is
+      // far more than the ESPHome main loop can give up: doing it inline
+      // starved the loop and tripped the task watchdog. The worker owns all
+      // protocol I/O; the loop task only publishes the results it hands back.
+      bool start_poll_task();
+      static void poll_task_trampoline(void *arg);
+      void poll_task_loop();
+      void run_poll_cycle();
+
+      // Run a one-off protocol command (button press, delay write) from the
+      // loop task, waiting briefly for the worker to finish its current burst
+      bool run_protocol_command(const char *what,
+                                const std::function<bool(UpsProtocolBase *)> &fn);
+
+      TaskHandle_t poll_task_handle_{nullptr};
+      std::atomic<bool> poll_task_running_{false};
+      std::atomic<bool> poll_in_flight_{false};   // worker is mid-cycle
+      std::atomic<bool> data_ready_{false};       // fresh data waiting to publish
+      std::atomic<bool> detection_failed_{false}; // worker gave up detecting
+      SemaphoreHandle_t protocol_mutex_{nullptr}; // guards active_protocol_ + USB
+
+      // How long a control command waits for the poll cycle to release the bus
+      static constexpr uint32_t PROTOCOL_COMMAND_WAIT_MS = 2000;
+      static constexpr uint32_t POLL_TASK_STACK_SIZE = 8192;
 
       // Core methods
       bool initialize_transport();

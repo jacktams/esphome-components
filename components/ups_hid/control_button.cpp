@@ -38,26 +38,21 @@ void UpsHidButton::press_action() {
     return;
   }
 
-  // Get the active protocol
-  auto active_protocol = parent_->get_active_protocol();
-  if (!active_protocol) {
-    ESP_LOGE(BUTTON_TAG, "No active protocol available");
-    return;
-  }
-
+  // Commands go through the parent, which serialises them against the
+  // background poll task that owns the USB bus
   bool success = false;
   
   if (button_type_ == BUTTON_TYPE_BEEPER) {
     ESP_LOGI(BUTTON_TAG, "Executing beeper action: %s", beeper_action_.c_str());
     
     if (beeper_action_ == beeper::ACTION_ENABLE) {
-      success = active_protocol->beeper_enable();
+      success = parent_->beeper_enable();
     } else if (beeper_action_ == beeper::ACTION_DISABLE) {
-      success = active_protocol->beeper_disable();
+      success = parent_->beeper_disable();
     } else if (beeper_action_ == beeper::ACTION_MUTE) {
-      success = active_protocol->beeper_mute();
+      success = parent_->beeper_mute();
     } else if (beeper_action_ == beeper::ACTION_TEST) {
-      success = active_protocol->beeper_test();
+      success = parent_->beeper_test();
     } else {
       ESP_LOGE(BUTTON_TAG, "Unknown beeper action: %s", beeper_action_.c_str());
       return;
@@ -73,15 +68,15 @@ void UpsHidButton::press_action() {
     ESP_LOGI(BUTTON_TAG, "Executing test action: %s", test_action_.c_str());
     
     if (test_action_ == test::ACTION_BATTERY_QUICK) {
-      success = active_protocol->start_battery_test_quick();
+      success = parent_->start_battery_test_quick();
     } else if (test_action_ == test::ACTION_BATTERY_DEEP) {
-      success = active_protocol->start_battery_test_deep();
+      success = parent_->start_battery_test_deep();
     } else if (test_action_ == test::ACTION_BATTERY_STOP) {
-      success = active_protocol->stop_battery_test();
+      success = parent_->stop_battery_test();
     } else if (test_action_ == test::ACTION_UPS_TEST) {
-      success = active_protocol->start_ups_test();
+      success = parent_->start_ups_test();
     } else if (test_action_ == test::ACTION_UPS_STOP) {
-      success = active_protocol->stop_ups_test();
+      success = parent_->stop_ups_test();
     } else {
       ESP_LOGE(BUTTON_TAG, "Unknown test action: %s", test_action_.c_str());
       return;
